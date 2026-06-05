@@ -19,7 +19,7 @@ function carregarSidebar() {
     sidebar.innerHTML = `
         <div class="sidebar-logo">
             <img src="../assets/logo.png" alt="Logo"
-                 onerror="this.outerHTML='<div style=\'font-size:40px;margin-bottom:8px;\'>🦋</div>'">
+                 onerror="this.style.display='none'">
             <div class="sidebar-brand">Ana Maria Caetano</div>
             <div class="sidebar-sub">Psicóloga &amp; Psicanalista</div>
         </div>
@@ -43,7 +43,7 @@ function carregarSidebar() {
 
         <div style="padding:12px 14px;border-top:1px solid rgba(201,168,76,0.12);margin-top:8px;">
             <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:rgba(255,255,255,0.2);text-align:center;">
-                LC Solutions ERP
+                PRUVENX ERP
             </div>
         </div>
 
