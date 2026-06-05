@@ -37,7 +37,7 @@
                 <div class="form-group">
                     <label>Valor por Sessão (calculado)</label>
                     <input id="valor_sessao" readonly placeholder="—"
-                        style="background:#f0ebe0;color:var(--gold-dark);font-weight:600;">
+                        style="background:#2A2A2A;color:var(--gold);font-weight:600;">
                 </div>
                 <div class="form-group form-full">
                     <label>Descrição</label>
@@ -94,21 +94,21 @@ function calcularValorSessao() {
 }
 
 async function salvarPacote() {
-    const id           = document.getElementById('pacote_id').value;
-    const nome         = document.getElementById('nome').value.trim();
-    const total_sessoes= Number(document.getElementById('total_sessoes').value);
-    const valor        = Number(document.getElementById('valor').value);
-    const descricao    = document.getElementById('descricao').value;
+    const id            = document.getElementById('pacote_id').value;
+    const nome          = document.getElementById('nome').value.trim();
+    const total_sessoes = Number(document.getElementById('total_sessoes').value);
+    const valor         = Number(document.getElementById('valor').value);
+    const descricao     = document.getElementById('descricao').value;
 
-    if (!nome)                      { alert('Informe o nome do pacote.'); return; }
+    if (!nome)                         { alert('Informe o nome do pacote.'); return; }
     if (!total_sessoes||total_sessoes<1){ alert('Informe o total de sessões.'); return; }
-    if (!valor||valor<=0)           { alert('Informe o valor.'); return; }
+    if (!valor||valor<=0)              { alert('Informe o valor.'); return; }
 
     const payload = { nome, total_sessoes, valor, descricao, ativo: true };
 
     if (id) {
         await db.from('pacotes_modelo').update(payload).eq('id', id);
-        alert('Pacote atualizado!');
+        alert('✅ Pacote atualizado!');
     } else {
         await db.from('pacotes_modelo').insert([payload]);
         alert('✅ Pacote criado!');
@@ -149,7 +149,7 @@ async function carregarPacotes() {
             </td>
             <td>${p.total_sessoes} sessões</td>
             <td><strong>R$ ${Number(p.valor).toFixed(2)}</strong></td>
-            <td style="color:var(--gold-dark);font-weight:500;">
+            <td style="color:var(--gold);font-weight:500;">
                 R$ ${(Number(p.valor)/p.total_sessoes).toFixed(2)}
             </td>
             <td>
@@ -158,11 +158,12 @@ async function carregarPacotes() {
                 </span>
             </td>
             <td>
-                <div style="display:flex;gap:8px;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-outline btn-sm" onclick="editarPacote(${p.id})">✏️ Editar</button>
-                    <button class="btn btn-danger btn-sm" onclick="toggleAtivo(${p.id},${p.ativo})">
+                    <button class="btn btn-outline btn-sm" onclick="toggleAtivo(${p.id},${p.ativo})">
                         ${p.ativo?'🚫 Inativar':'✅ Ativar'}
                     </button>
+                    <button class="btn btn-danger btn-sm" onclick="excluirPacote(${p.id})">🗑️ Excluir</button>
                 </div>
             </td>
         </tr>`).join('')}
@@ -173,17 +174,28 @@ async function carregarPacotes() {
 function editarPacote(id) {
     const p = pacotesCarregados.find(x => x.id===id);
     if (!p) return;
-    document.getElementById('pacote_id').value    = p.id;
-    document.getElementById('nome').value         = p.nome;
-    document.getElementById('total_sessoes').value= p.total_sessoes;
-    document.getElementById('valor').value        = p.valor;
-    document.getElementById('descricao').value    = p.descricao||'';
+    document.getElementById('pacote_id').value     = p.id;
+    document.getElementById('nome').value          = p.nome;
+    document.getElementById('total_sessoes').value = p.total_sessoes;
+    document.getElementById('valor').value         = p.valor;
+    document.getElementById('descricao').value     = p.descricao||'';
     calcularValorSessao();
     window.scrollTo(0,0);
 }
 
 async function toggleAtivo(id, atual) {
     await db.from('pacotes_modelo').update({ ativo: !atual }).eq('id', id);
+    carregarPacotes();
+}
+
+async function excluirPacote(id) {
+    if (!confirm('Excluir este pacote permanentemente? Esta ação não pode ser desfeita.')) return;
+    const { error } = await db.from('pacotes_modelo').delete().eq('id', id);
+    if (error) {
+        alert('Não é possível excluir este pacote pois ele está sendo usado por pacientes.');
+        return;
+    }
+    alert('✅ Pacote excluído!');
     carregarPacotes();
 }
 
