@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prontuário — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>📋 <span class="header-gold">Prontuário</span></h1>
+        <p>Perfil clínico e evolução por sessão</p>
+    </div>
+
+    <div class="container">
+
+        <!-- HEADER DO PACIENTE -->
+        <div class="prontuario-header" id="prontuario-header">
+            <div class="prontuario-avatar" id="pron-avatar">—</div>
+            <div class="prontuario-info">
+                <div class="prontuario-nome" id="pron-nome">Carregando...</div>
+                <div class="prontuario-meta" id="pron-meta"></div>
+            </div>
+            <div class="prontuario-stats">
+                <div class="pron-stat">
+                    <div class="pron-stat-val" id="pron-total">—</div>
+                    <div class="pron-stat-label">Total Sessões</div>
+                </div>
+                <div class="pron-stat">
+                    <div class="pron-stat-val" id="pron-realizadas">—</div>
+                    <div class="pron-stat-label">Realizadas</div>
+                </div>
+                <div class="pron-stat">
+                    <div class="pron-stat-val" id="pron-restantes">—</div>
+                    <div class="pron-stat-label">Restantes</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PERFIL GERAL (EDITÁVEL) -->
+        <div class="form-section">
+            <h2>Perfil Clínico Geral</h2>
+            <div class="form-grid">
+                <div class="form-group form-full">
+                    <label>Queixa Principal / Motivo do Atendimento</label>
+                    <textarea id="queixa_principal" placeholder="Motivo que trouxe o paciente ao atendimento..." style="min-height:90px;"></textarea>
+                </div>
+                <div class="form-group form-full">
+                    <label>Perfil do Paciente</label>
+                    <textarea id="perfil_geral" placeholder="Características de personalidade, comportamento, histórico relevante, pontos de atenção para os atendimentos..." style="min-height:130px;"></textarea>
+                </div>
+                <div class="form-group form-full">
+                    <label>Observações Gerais</label>
+                    <textarea id="observacoes_gerais" placeholder="Outras informações relevantes..."></textarea>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarPerfilGeral()">💾 Salvar Perfil</button>
+            </div>
+        </div>
+
+        <!-- NOVA ANOTAÇÃO DE SESSÃO -->
+        <div class="form-section">
+            <h2>Nova Anotação de Sessão</h2>
+            <input type="hidden" id="nota_id">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Data da Sessão *</label>
+                    <input id="nota_data" type="date">
+                </div>
+                <div class="form-group">
+                    <label>Estado Emocional do Paciente</label>
+                    <select id="nota_humor">
+                        <option value="">Selecione</option>
+                        <option value="1">😰 Muito Agitado / Em Crise</option>
+                        <option value="2">😟 Ansioso / Resistente</option>
+                        <option value="3">😐 Neutro / Estável</option>
+                        <option value="4">🙂 Receptivo / Engajado</option>
+                        <option value="5">😊 Muito Bem / Evolução Positiva</option>
+                    </select>
+                </div>
+                <div class="form-group form-full">
+                    <label>Temas Abordados na Sessão</label>
+                    <input id="nota_temas" placeholder="Ex: Ansiedade, relacionamentos, autoestima...">
+                </div>
+                <div class="form-group form-full">
+                    <label>Anotações da Sessão *</label>
+                    <textarea id="nota_texto" placeholder="Descreva o que foi trabalhado, reações do paciente, insights, pontos de atenção..." style="min-height:140px;"></textarea>
+                </div>
+                <div class="form-group form-full">
+                    <label>Plano para Próxima Sessão</label>
+                    <textarea id="nota_proxima" placeholder="O que será abordado na próxima sessão..."></textarea>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarNota()">💾 Salvar Anotação</button>
+                <button class="btn btn-outline" onclick="limparNota()">Limpar</button>
+            </div>
+        </div>
+
+        <!-- HISTÓRICO DE ANOTAÇÕES -->
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Histórico de Sessões</h2>
+                <span id="total-notas" style="color:var(--text-muted);font-size:13px;"></span>
+            </div>
+            <div id="lista-notas" style="padding:8px 0;"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const humorLabels = {
+    '1': { label: 'Muito Agitado / Em Crise',     classe: 'humor-1' },
+    '2': { label: 'Ansioso / Resistente',          classe: 'humor-2' },
+    '3': { label: 'Neutro / Estável',              classe: 'humor-3' },
+    '4': { label: 'Receptivo / Engajado',          classe: 'humor-4' },
+    '5': { label: 'Muito Bem / Evolução Positiva', classe: 'humor-5' },
+};
+
+// Pega o ID do paciente pela URL
+function getPacienteId() {
+    return new URLSearchParams(window.location.search).get('id');
+}
+
+async function carregarPaciente() {
+    const id = getPacienteId();
+    if (!id) { alert('Paciente não encontrado.'); return; }
+
+    const { data: p } = await db.from('pacientes').select('*').eq('id', id).single();
+    if (!p) { alert('Paciente não encontrado.'); return; }
+
+    // Header
+    document.getElementById('pron-avatar').textContent = p.nome[0].toUpperCase();
+    document.getElementById('pron-nome').textContent = p.nome;
+    document.getElementById('pron-meta').textContent =
+        [p.telefone, p.email, p.data_nascimento ? 'Nasc: '+p.data_nascimento.split('-').reverse().join('/') : '']
+        .filter(Boolean).join(' · ');
+
+    // Perfil geral
+    document.getElementById('queixa_principal').value = p.queixa_principal || '';
+    document.getElementById('perfil_geral').value = p.perfil_geral || '';
+    document.getElementById('observacoes_gerais').value = p.observacoes || '';
+
+    // Stats de sessões
+    const { data: pacotes } = await db.from('pacientes_pacotes')
+        .select('total_sessoes, sessoes_realizadas, sessoes_restantes')
+        .eq('paciente_id', id).eq('status','ativo');
+
+    const total     = (pacotes||[]).reduce((s,pk) => s + pk.total_sessoes, 0);
+    const realizadas= (pacotes||[]).reduce((s,pk) => s + pk.sessoes_realizadas, 0);
+    const restantes = (pacotes||[]).reduce((s,pk) => s + pk.sessoes_restantes, 0);
+
+    document.getElementById('pron-total').textContent = total || '—';
+    document.getElementById('pron-realizadas').textContent = realizadas || '0';
+    document.getElementById('pron-restantes').textContent = restantes || '0';
+
+    await carregarNotas(id);
+}
+
+async function carregarNotas(pacienteId) {
+    const id = pacienteId || getPacienteId();
+    const { data: notas } = await db.from('prontuario_notas')
+        .select('*')
+        .eq('paciente_id', id)
+        .order('data_sessao', { ascending: false });
+
+    const lista = notas || [];
+    document.getElementById('total-notas').textContent =
+        lista.length > 0 ? `${lista.length} anotação(ões) registrada(s)` : '';
+
+    const div = document.getElementById('lista-notas');
+    if (!lista.length) {
+        div.innerHTML = `<div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p>Nenhuma anotação registrada ainda.</p>
+        </div>`;
+        return;
+    }
+
+    div.innerHTML = lista.map(nota => {
+        const humor = humorLabels[nota.estado_emocional];
+        return `
+        <div class="nota-sessao" style="margin:0 24px 12px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+                <div class="nota-data">
+                    📅 ${nota.data_sessao ? nota.data_sessao.split('-').reverse().join('/') : '—'}
+                    ${nota.temas_abordados ? `<span style="margin-left:10px;color:var(--text-muted);font-weight:400;">· ${nota.temas_abordados}</span>` : ''}
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    ${humor ? `<span class="nota-humor ${humor.classe}">${humor.label}</span>` : ''}
+                    <button class="btn btn-outline btn-sm" onclick="editarNota(${nota.id})">✏️</button>
+                    <button class="btn btn-danger btn-sm" onclick="excluirNota(${nota.id})">🗑️</button>
+                </div>
+            </div>
+
+            <div class="nota-texto" style="margin-top:12px;">${nota.anotacao || ''}</div>
+
+            ${nota.plano_proxima_sessao ? `
+            <div style="margin-top:12px;padding:10px 14px;background:var(--gold-pale);border-radius:8px;">
+                <div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--gold-dark);font-weight:600;margin-bottom:4px;">
+                    Plano para próxima sessão
+                </div>
+                <div style="font-size:13px;color:var(--text);">${nota.plano_proxima_sessao}</div>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+async function salvarPerfilGeral() {
+    const id = getPacienteId();
+    await db.from('pacientes').update({
+        queixa_principal: document.getElementById('queixa_principal').value,
+        perfil_geral: document.getElementById('perfil_geral').value,
+        observacoes: document.getElementById('observacoes_gerais').value
+    }).eq('id', id);
+    alert('✅ Perfil salvo!');
+}
+
+async function salvarNota() {
+    const id = getPacienteId();
+    const nota_id = document.getElementById('nota_id').value;
+    const usuario = JSON.parse(sessionStorage.getItem('usuario_clinica'));
+
+    const data_sessao    = document.getElementById('nota_data').value;
+    const anotacao       = document.getElementById('nota_texto').value.trim();
+    const estado_emocional = document.getElementById('nota_humor').value;
+    const temas_abordados  = document.getElementById('nota_temas').value;
+    const plano_proxima    = document.getElementById('nota_proxima').value;
+
+    if (!data_sessao) { alert('Informe a data da sessão.'); return; }
+    if (!anotacao)    { alert('Escreva a anotação da sessão.'); return; }
+
+    const payload = {
+        paciente_id: id,
+        psicologa_id: usuario?.id,
+        data_sessao,
+        anotacao,
+        estado_emocional: estado_emocional || null,
+        temas_abordados,
+        plano_proxima_sessao: plano_proxima
+    };
+
+    if (nota_id) {
+        await db.from('prontuario_notas').update(payload).eq('id', nota_id);
+        alert('Anotação atualizada!');
+    } else {
+        await db.from('prontuario_notas').insert([payload]);
+        alert('✅ Anotação salva!');
+    }
+
+    limparNota();
+    carregarNotas(id);
+}
+
+async function editarNota(id) {
+    const { data: nota } = await db.from('prontuario_notas').select('*').eq('id', id).single();
+    if (!nota) return;
+    document.getElementById('nota_id').value = nota.id;
+    document.getElementById('nota_data').value = nota.data_sessao || '';
+    document.getElementById('nota_humor').value = nota.estado_emocional || '';
+    document.getElementById('nota_temas').value = nota.temas_abordados || '';
+    document.getElementById('nota_texto').value = nota.anotacao || '';
+    document.getElementById('nota_proxima').value = nota.plano_proxima_sessao || '';
+    window.scrollTo(0, 0);
+    document.getElementById('nota_texto').focus();
+}
+
+async function excluirNota(id) {
+    if (!confirm('Excluir esta anotação?')) return;
+    await db.from('prontuario_notas').delete().eq('id', id);
+    carregarNotas(getPacienteId());
+}
+
+function limparNota() {
+    ['nota_id','nota_data','nota_temas','nota_texto','nota_proxima'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('nota_humor').value = '';
+}
+
+// Define data de hoje como padrão
+document.getElementById('nota_data').value = new Date().toISOString().split('T')[0];
+
+carregarPaciente();
+</script>
+</body>
+</html>

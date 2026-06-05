@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pacientes — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>✦ <span class="header-gold">Pacientes</span></h1>
+        <p>Cadastro e acompanhamento de pacientes</p>
+    </div>
+
+    <div class="container">
+
+        <div class="form-section">
+            <h2>Cadastro de Paciente</h2>
+            <input type="hidden" id="paciente_id">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nome Completo *</label>
+                    <input id="nome" placeholder="Nome do paciente">
+                </div>
+                <div class="form-group">
+                    <label>Telefone</label>
+                    <input id="telefone" placeholder="(00) 00000-0000">
+                </div>
+                <div class="form-group">
+                    <label>E-mail</label>
+                    <input id="email" type="email" placeholder="email@exemplo.com">
+                </div>
+                <div class="form-group">
+                    <label>Data de Nascimento</label>
+                    <input id="data_nascimento" type="date">
+                </div>
+                <div class="form-group">
+                    <label>CPF</label>
+                    <input id="cpf" placeholder="000.000.000-00">
+                </div>
+                <div class="form-group">
+                    <label>Como Conheceu</label>
+                    <select id="como_conheceu">
+                        <option value="">Selecione</option>
+                        <option>Indicação</option>
+                        <option>Instagram</option>
+                        <option>Google</option>
+                        <option>WhatsApp</option>
+                        <option>Outros</option>
+                    </select>
+                </div>
+                <div class="form-group form-full">
+                    <label>Endereço</label>
+                    <input id="endereco" placeholder="Rua, número, bairro, cidade">
+                </div>
+                <div class="form-group form-full">
+                    <label>Queixa Principal / Motivo do Atendimento</label>
+                    <textarea id="queixa_principal" placeholder="Descreva o motivo que trouxe o paciente ao atendimento..."></textarea>
+                </div>
+                <div class="form-group form-full">
+                    <label>Perfil Geral do Paciente</label>
+                    <textarea id="perfil_geral" placeholder="Características de personalidade, comportamento, histórico relevante, pontos de atenção para os atendimentos..." style="min-height:120px;"></textarea>
+                </div>
+                <div class="form-group form-full">
+                    <label>Observações Gerais</label>
+                    <textarea id="observacoes" placeholder="Outras informações relevantes..."></textarea>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarPaciente()">💾 Salvar Paciente</button>
+                <button class="btn btn-outline" onclick="limpar()">Limpar</button>
+            </div>
+        </div>
+
+        <!-- LISTA -->
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Pacientes Cadastrados</h2>
+                <input id="pesquisa" placeholder="Pesquisar paciente..." onkeyup="filtrar()">
+            </div>
+            <div id="lista-pacientes"></div>
+        </div>
+
+    </div>
+</div>
+
+<!-- MODAL PACOTES -->
+<div class="modal-overlay" id="modal-pacotes">
+    <div class="modal">
+        <h2>📋 Pacotes — <span id="modal-paciente-nome"></span></h2>
+
+        <div id="pacotes-do-paciente" style="margin-bottom:24px;"></div>
+
+        <hr style="border-color:var(--border);margin-bottom:24px;">
+        <h3 style="font-family:'Cormorant Garamond',serif;font-size:18px;margin-bottom:16px;">Adicionar Novo Pacote</h3>
+
+        <div class="form-group" style="margin-bottom:14px;">
+            <label>Modelo de Pacote</label>
+            <select id="modal-pacote-modelo" onchange="preencherValorPacote()">
+                <option value="">Selecione</option>
+            </select>
+        </div>
+        <div class="form-grid" style="margin-bottom:14px;">
+            <div class="form-group">
+                <label>Total de Sessões</label>
+                <input id="modal-total-sessoes" type="number" min="1" placeholder="Ex: 8">
+            </div>
+            <div class="form-group">
+                <label>Valor Total (R$)</label>
+                <input id="modal-valor" type="number" placeholder="Ex: 1100.00">
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+            <label>Forma de Pagamento</label>
+            <select id="modal-pagamento">
+                <option>PIX</option>
+                <option>Dinheiro</option>
+                <option>Cartão Débito</option>
+                <option>Cartão Crédito</option>
+                <option>Transferência</option>
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom:20px;">
+            <label>Observações</label>
+            <textarea id="modal-obs" placeholder="Observações sobre este pacote..."></textarea>
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="salvarPacote()">✅ Adicionar Pacote</button>
+            <button class="btn btn-outline" onclick="fecharModal('modal-pacotes')">Fechar</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let pacientesCarregados = [];
+let pacienteSelecionadoId = null;
+let pacotesModelo = [];
+
+async function carregarPacientes() {
+    const { data } = await db.from('pacientes')
+        .select('*, pacientes_pacotes(sessoes_restantes, status)')
+        .eq('ativo', true).order('nome');
+    pacientesCarregados = data || [];
+    renderizar(pacientesCarregados);
+}
+
+function renderizar(lista) {
+    const div = document.getElementById('lista-pacientes');
+    if (!lista.length) {
+        div.innerHTML = '<div class="empty-state"><div class="empty-icon">✦</div><p>Nenhum paciente cadastrado.</p></div>';
+        return;
+    }
+    div.innerHTML = `<table>
+        <thead><tr>
+            <th>Nome</th><th>Telefone</th><th>Queixa Principal</th><th>Sessões</th><th>Ações</th>
+        </tr></thead>
+        <tbody>
+        ${lista.map(p => {
+            const ativos = (p.pacientes_pacotes||[]).filter(pk => pk.status==='ativo');
+            const total = ativos.reduce((s,pk) => s+(pk.sessoes_restantes||0),0);
+            let badge = '';
+            if (!ativos.length) badge = '<span class="sessoes-badge alerta">Sem pacote</span>';
+            else if (total===0) badge = '<span class="sessoes-badge critico">0 sessões</span>';
+            else if (total<=2) badge = `<span class="sessoes-badge alerta">${total} restante${total>1?'s':''}</span>`;
+            else badge = `<span class="sessoes-badge ok">${total} restantes</span>`;
+
+            return `<tr>
+                <td><strong>${p.nome}</strong></td>
+                <td>${p.telefone||'—'}</td>
+                <td style="max-width:200px;color:var(--text-muted);font-size:12px;">
+                    ${p.queixa_principal ? p.queixa_principal.slice(0,60)+'...' : '—'}
+                </td>
+                <td>${badge}</td>
+                <td>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <a href="prontuario.html?id=${p.id}" class="btn btn-outline btn-sm">📋 Prontuário</a>
+                        <button class="btn btn-outline btn-sm" onclick="abrirPacotes(${p.id},'${p.nome.replace(/'/g,"\\'")}')">📦 Pacotes</button>
+                        <button class="btn btn-outline btn-sm" onclick="editarPaciente(${p.id})">✏️</button>
+                        <button class="btn btn-danger btn-sm" onclick="inativarPaciente(${p.id})">🗑️</button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function salvarPaciente() {
+    const id = document.getElementById('paciente_id').value;
+    const usuario = JSON.parse(sessionStorage.getItem('usuario_clinica'));
+    const payload = {
+        nome: document.getElementById('nome').value.trim(),
+        telefone: document.getElementById('telefone').value,
+        email: document.getElementById('email').value,
+        data_nascimento: document.getElementById('data_nascimento').value || null,
+        cpf: document.getElementById('cpf').value,
+        como_conheceu: document.getElementById('como_conheceu').value,
+        endereco: document.getElementById('endereco').value,
+        queixa_principal: document.getElementById('queixa_principal').value,
+        perfil_geral: document.getElementById('perfil_geral').value,
+        observacoes: document.getElementById('observacoes').value,
+        psicologa_id: usuario?.id
+    };
+    if (!payload.nome) { alert('Informe o nome do paciente.'); return; }
+    if (id) {
+        await db.from('pacientes').update(payload).eq('id', id);
+        alert('Paciente atualizado!');
+    } else {
+        await db.from('pacientes').insert([payload]);
+        alert('✅ Paciente cadastrado!');
+    }
+    limpar();
+    carregarPacientes();
+}
+
+function editarPaciente(id) {
+    const p = pacientesCarregados.find(x => x.id===id);
+    if (!p) return;
+    document.getElementById('paciente_id').value = p.id;
+    document.getElementById('nome').value = p.nome||'';
+    document.getElementById('telefone').value = p.telefone||'';
+    document.getElementById('email').value = p.email||'';
+    document.getElementById('data_nascimento').value = p.data_nascimento||'';
+    document.getElementById('cpf').value = p.cpf||'';
+    document.getElementById('como_conheceu').value = p.como_conheceu||'';
+    document.getElementById('endereco').value = p.endereco||'';
+    document.getElementById('queixa_principal').value = p.queixa_principal||'';
+    document.getElementById('perfil_geral').value = p.perfil_geral||'';
+    document.getElementById('observacoes').value = p.observacoes||'';
+    window.scrollTo(0,0);
+}
+
+async function inativarPaciente(id) {
+    if (!confirm('Deseja remover este paciente?')) return;
+    await db.from('pacientes').update({ativo:false}).eq('id',id);
+    carregarPacientes();
+}
+
+function limpar() {
+    ['paciente_id','nome','telefone','email','data_nascimento','cpf',
+     'endereco','queixa_principal','perfil_geral','observacoes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    document.getElementById('como_conheceu').value = '';
+}
+
+function filtrar() {
+    const t = document.getElementById('pesquisa').value.toLowerCase();
+    renderizar(pacientesCarregados.filter(p => p.nome.toLowerCase().includes(t)));
+}
+
+async function abrirPacotes(pacienteId, nome) {
+    pacienteSelecionadoId = pacienteId;
+    document.getElementById('modal-paciente-nome').textContent = nome;
+    document.getElementById('modal-pacotes').classList.add('open');
+    const { data: modelos } = await db.from('pacotes_modelo').select('*').eq('ativo',true);
+    pacotesModelo = modelos||[];
+    const sel = document.getElementById('modal-pacote-modelo');
+    sel.innerHTML = '<option value="">Selecione um modelo</option>';
+    pacotesModelo.forEach(m => {
+        sel.innerHTML += `<option value="${m.id}" data-sessoes="${m.total_sessoes}" data-valor="${m.valor}">
+            ${m.nome} — ${m.total_sessoes} sessões — R$ ${Number(m.valor).toFixed(2)}
+        </option>`;
+    });
+    await carregarPacotesDoPaciente(pacienteId);
+}
+
+async function carregarPacotesDoPaciente(pacienteId) {
+    const { data } = await db.from('pacientes_pacotes')
+        .select('*, pacotes_modelo(nome)')
+        .eq('paciente_id', pacienteId)
+        .order('id', {ascending:false});
+    const div = document.getElementById('pacotes-do-paciente');
+    if (!data||!data.length) {
+        div.innerHTML = '<p style="color:var(--text-muted);font-style:italic;">Nenhum pacote contratado ainda.</p>';
+        return;
+    }
+    div.innerHTML = data.map(pk => {
+        const perc = pk.total_sessoes>0 ? (pk.sessoes_realizadas/pk.total_sessoes*100) : 0;
+        const cor = pk.sessoes_restantes<=1?'red':pk.sessoes_restantes<=2?'yellow':'';
+        return `<div class="card" style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <strong>${pk.pacotes_modelo?.nome||'Pacote'}</strong>
+                <span class="status status-${pk.status}">${pk.status}</span>
+            </div>
+            <p style="margin-top:8px;font-size:13px;">
+                ${pk.sessoes_realizadas} realizadas ·
+                <strong>${pk.sessoes_restantes} restantes</strong> de ${pk.total_sessoes}
+                · R$ ${Number(pk.valor_total).toFixed(2)}
+            </p>
+            <div class="progress-bar" style="margin-top:8px;">
+                <div class="progress-fill ${cor}" style="width:${perc}%"></div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function preencherValorPacote() {
+    const sel = document.getElementById('modal-pacote-modelo');
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('modal-total-sessoes').value = opt.getAttribute('data-sessoes')||'';
+    document.getElementById('modal-valor').value = opt.getAttribute('data-valor')||'';
+}
+
+async function salvarPacote() {
+    const usuario = JSON.parse(sessionStorage.getItem('usuario_clinica'));
+    const totalSessoes = Number(document.getElementById('modal-total-sessoes').value);
+    const valor = Number(document.getElementById('modal-valor').value);
+    const pacoteId = document.getElementById('modal-pacote-modelo').value;
+    const pagamento = document.getElementById('modal-pagamento').value;
+    const obs = document.getElementById('modal-obs').value;
+    if (!totalSessoes||!valor) { alert('Informe sessões e valor.'); return; }
+    await db.from('pacientes_pacotes').insert([{
+        paciente_id: pacienteSelecionadoId,
+        pacote_id: pacoteId||null,
+        psicologa_id: usuario?.id,
+        total_sessoes: totalSessoes,
+        sessoes_realizadas: 0,
+        sessoes_restantes: totalSessoes,
+        valor_total: valor,
+        valor_pago: valor,
+        status: 'ativo',
+        data_inicio: new Date().toISOString().split('T')[0],
+        observacoes: obs
+    }]);
+    await db.from('financeiro').insert([{
+        paciente_id: pacienteSelecionadoId,
+        tipo: 'ENTRADA',
+        descricao: `Pacote de ${totalSessoes} sessões`,
+        valor, forma_pagamento: pagamento,
+        data_movimento: new Date().toISOString().split('T')[0]
+    }]);
+    alert('✅ Pacote adicionado!');
+    document.getElementById('modal-total-sessoes').value='';
+    document.getElementById('modal-valor').value='';
+    document.getElementById('modal-obs').value='';
+    await carregarPacotesDoPaciente(pacienteSelecionadoId);
+    carregarPacientes();
+}
+
+function fecharModal(id) {
+    document.getElementById(id).classList.remove('open');
+    pacienteSelecionadoId = null;
+}
+
+carregarPacientes();
+</script>
+</body>
+</html>

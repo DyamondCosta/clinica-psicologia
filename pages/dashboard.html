@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>⬡ <span class="header-gold">Dashboard</span></h1>
+        <p id="data-hoje"></p>
+    </div>
+
+    <div class="container">
+
+        <!-- ALERTAS DE SESSÕES ACABANDO -->
+        <div id="alertas-sessoes"></div>
+
+        <!-- CARDS ESTATÍSTICAS -->
+        <div class="cards-grid">
+            <div class="card-stat">
+                <div class="card-stat-label">Pacientes Ativos</div>
+                <div class="card-stat-value gold" id="total-pacientes">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Sessões Hoje</div>
+                <div class="card-stat-value" id="sessoes-hoje">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Sessões esta Semana</div>
+                <div class="card-stat-value" id="sessoes-semana">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Faturamento do Mês</div>
+                <div class="card-stat-value green" id="fat-mes">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Pacotes Ativos</div>
+                <div class="card-stat-value gold" id="pacotes-ativos">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Sessões c/ Alerta</div>
+                <div class="card-stat-value red" id="sessoes-alerta">—</div>
+            </div>
+        </div>
+
+        <!-- AGENDA DO DIA -->
+        <div class="form-section">
+            <h2>Agenda de Hoje</h2>
+            <div id="agenda-hoje"></div>
+        </div>
+
+        <!-- PRÓXIMOS AGENDAMENTOS -->
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Próximos Agendamentos</h2>
+                <a href="agendamentos.html" class="btn btn-outline btn-sm">Ver todos</a>
+            </div>
+            <div id="proximos"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function hojeStr() { return new Date().toISOString().split('T')[0]; }
+
+function semanaAtual() {
+    const hoje = new Date();
+    const dom = new Date(hoje); dom.setDate(hoje.getDate() - hoje.getDay());
+    const sab = new Date(dom); sab.setDate(dom.getDate() + 6);
+    return [dom.toISOString().split('T')[0], sab.toISOString().split('T')[0]];
+}
+
+async function carregarDashboard() {
+    const hoje = hojeStr();
+    const [ini, fim] = semanaAtual();
+    const mes = hoje.slice(0,7);
+
+    // Data formatada
+    const d = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    document.getElementById('data-hoje').textContent = d.charAt(0).toUpperCase() + d.slice(1);
+
+    // Pacientes ativos
+    const { count: totalPac } = await db.from('pacientes')
+        .select('*',{count:'exact',head:true}).eq('ativo',true);
+    document.getElementById('total-pacientes').textContent = totalPac || 0;
+
+    // Sessões hoje
+    const { count: sesHoje } = await db.from('agendamentos')
+        .select('*',{count:'exact',head:true})
+        .eq('data_sessao', hoje).neq('status','cancelado');
+    document.getElementById('sessoes-hoje').textContent = sesHoje || 0;
+
+    // Sessões semana
+    const { count: sesSem } = await db.from('agendamentos')
+        .select('*',{count:'exact',head:true})
+        .gte('data_sessao', ini).lte('data_sessao', fim).neq('status','cancelado');
+    document.getElementById('sessoes-semana').textContent = sesSem || 0;
+
+    // Faturamento mês
+    const { data: fin } = await db.from('financeiro').select('valor')
+        .eq('tipo','ENTRADA').gte('data_movimento', mes+'-01');
+    const totalMes = (fin||[]).reduce((s,r) => s + Number(r.valor), 0);
+    document.getElementById('fat-mes').textContent = 'R$ ' + totalMes.toFixed(2).replace('.',',');
+
+    // Pacotes ativos
+    const { count: pacAtivos } = await db.from('pacientes_pacotes')
+        .select('*',{count:'exact',head:true}).eq('status','ativo');
+    document.getElementById('pacotes-ativos').textContent = pacAtivos || 0;
+
+    // Alertas de sessões acabando (≤ 2)
+    const { data: alertas } = await db.from('pacientes_pacotes')
+        .select('*, pacientes(nome)')
+        .eq('status','ativo')
+        .lte('sessoes_restantes', 2);
+
+    document.getElementById('sessoes-alerta').textContent = (alertas||[]).length;
+
+    // Renderiza alertas
+    const alertasDiv = document.getElementById('alertas-sessoes');
+    alertasDiv.innerHTML = '';
+    (alertas||[]).forEach(a => {
+        const critico = a.sessoes_restantes === 0;
+        alertasDiv.innerHTML += `
+        <div class="alerta-banner ${critico ? 'alerta-critico' : ''}">
+            <div class="alerta-icon">${critico ? '🚨' : '⚠️'}</div>
+            <div class="alerta-texto">
+                <div class="alerta-titulo">
+                    ${critico ? 'Sessões esgotadas' : 'Sessões acabando'} — ${a.pacientes?.nome || '—'}
+                </div>
+                <div class="alerta-desc">
+                    ${critico
+                        ? 'Este paciente não possui mais sessões disponíveis. Ofereça um novo pacote.'
+                        : `Restam apenas <strong>${a.sessoes_restantes}</strong> sessão(ões). Considere renovar o pacote.`}
+                </div>
+            </div>
+            <a href="pacientes.html" class="btn btn-outline btn-sm">Ver Paciente</a>
+        </div>`;
+    });
+
+    // Agenda de hoje
+    const { data: agHoje } = await db.from('agendamentos')
+        .select('*, pacientes(nome)')
+        .eq('data_sessao', hoje)
+        .neq('status','cancelado')
+        .order('horario');
+
+    const agDiv = document.getElementById('agenda-hoje');
+    if (!agHoje || !agHoje.length) {
+        agDiv.innerHTML = '<div class="empty-state"><div class="empty-icon">◷</div><p>Nenhum atendimento agendado para hoje.</p></div>';
+    } else {
+        agDiv.innerHTML = agHoje.map(ag => `
+            <div class="horario-item">
+                <div class="horario-time">${ag.horario?.slice(0,5)}</div>
+                <div class="horario-info">
+                    <div class="horario-nome">${ag.pacientes?.nome || '—'}</div>
+                    <div class="horario-detalhe">${ag.tipo === 'avulso' ? 'Sessão Avulsa' : 'Pacote'} · ${ag.duracao_minutos||50} min</div>
+                </div>
+                <span class="status status-${ag.status}">${ag.status}</span>
+            </div>`).join('');
+    }
+
+    // Próximos agendamentos
+    const { data: proximos } = await db.from('agendamentos')
+        .select('*, pacientes(nome)')
+        .gt('data_sessao', hoje)
+        .eq('status','agendado')
+        .order('data_sessao')
+        .order('horario')
+        .limit(8);
+
+    const proxDiv = document.getElementById('proximos');
+    if (!proximos || !proximos.length) {
+        proxDiv.innerHTML = '<div class="empty-state"><p>Nenhum agendamento futuro.</p></div>';
+    } else {
+        proxDiv.innerHTML = `<table>
+            <thead><tr><th>Data</th><th>Horário</th><th>Paciente</th><th>Tipo</th><th>Status</th></tr></thead>
+            <tbody>
+            ${proximos.map(ag => `<tr>
+                <td>${ag.data_sessao.split('-').reverse().join('/')}</td>
+                <td><strong>${ag.horario?.slice(0,5)}</strong></td>
+                <td>${ag.pacientes?.nome || '—'}</td>
+                <td>${ag.tipo === 'avulso' ? 'Avulso' : 'Pacote'}</td>
+                <td><span class="status status-${ag.status}">${ag.status}</span></td>
+            </tr>`).join('')}
+            </tbody>
+        </table>`;
+    }
+}
+
+carregarDashboard();
+</script>
+</body>
+</html>

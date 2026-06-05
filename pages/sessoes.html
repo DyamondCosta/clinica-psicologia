@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sessões — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>◉ <span class="header-gold">Sessões</span></h1>
+        <p>Controle de sessões por paciente</p>
+    </div>
+
+    <div class="container">
+
+        <div class="form-section">
+            <h2>Consultar Paciente</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Selecione o Paciente</label>
+                    <select id="filtro_paciente" onchange="carregarSessoesPaciente()">
+                        <option value="">Todos os pacientes</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAINEL INDIVIDUAL -->
+        <div id="painel-paciente" style="display:none;">
+
+            <div id="resumo-pacotes"></div>
+
+            <div class="table-section">
+                <div class="table-header">
+                    <h2>Histórico de Sessões</h2>
+                    <a id="link-prontuario" href="#" class="btn btn-outline btn-sm">📋 Ver Prontuário</a>
+                </div>
+                <div id="historico-sessoes"></div>
+            </div>
+        </div>
+
+        <!-- LISTA GERAL -->
+        <div id="lista-geral">
+            <div class="table-section">
+                <div class="table-header">
+                    <h2>Todos os Pacientes — Resumo</h2>
+                    <input id="pesquisa-geral" placeholder="Buscar paciente..." onkeyup="filtrarGeral()">
+                </div>
+                <div id="tabela-geral"></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let dadosGeral = [];
+
+async function carregarPacientesSelect() {
+    const { data } = await db.from('pacientes').select('id,nome').eq('ativo',true).order('nome');
+    const sel = document.getElementById('filtro_paciente');
+    (data||[]).forEach(p => {
+        sel.innerHTML += `<option value="${p.id}">${p.nome}</option>`;
+    });
+}
+
+async function carregarSessoesPaciente() {
+    const pacienteId = document.getElementById('filtro_paciente').value;
+    const painel = document.getElementById('painel-paciente');
+    const geral  = document.getElementById('lista-geral');
+
+    if (!pacienteId) {
+        painel.style.display = 'none';
+        geral.style.display  = 'block';
+        return;
+    }
+
+    painel.style.display = 'block';
+    geral.style.display  = 'none';
+
+    document.getElementById('link-prontuario').href = `prontuario.html?id=${pacienteId}`;
+
+    // Pacotes
+    const { data: pacotes } = await db.from('pacientes_pacotes')
+        .select('*, pacotes_modelo(nome)')
+        .eq('paciente_id', pacienteId)
+        .order('id', { ascending: false });
+
+    const resumoDiv = document.getElementById('resumo-pacotes');
+    if (!pacotes||!pacotes.length) {
+        resumoDiv.innerHTML = '<div class="card"><p style="color:var(--text-muted);font-style:italic;">Nenhum pacote contratado.</p></div>';
+    } else {
+        resumoDiv.innerHTML = pacotes.map(pk => {
+            const perc = pk.total_sessoes>0 ? (pk.sessoes_realizadas/pk.total_sessoes*100) : 0;
+            const cor  = pk.sessoes_restantes<=1?'red':pk.sessoes_restantes<=2?'yellow':'';
+            return `
+            <div class="card" style="margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+                    <div>
+                        <strong style="font-family:'Cormorant Garamond',serif;font-size:20px;">
+                            ${pk.pacotes_modelo?.nome||'Pacote'}
+                        </strong>
+                        <span class="status status-${pk.status}" style="margin-left:10px;">${pk.status}</span>
+                    </div>
+                    <div style="font-size:13px;color:var(--text-muted);">
+                        Início: ${pk.data_inicio?pk.data_inicio.split('-').reverse().join('/'):'—'}
+                        · R$ ${Number(pk.valor_total).toFixed(2)}
+                    </div>
+                </div>
+                <div style="display:flex;gap:32px;margin-top:16px;flex-wrap:wrap;">
+                    <div style="text-align:center;">
+                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:var(--gold-dark);">${pk.total_sessoes}</div>
+                        <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Total</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:#2d7a4f;">${pk.sessoes_realizadas}</div>
+                        <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Realizadas</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:${pk.sessoes_restantes<=2?'#b84040':'var(--dark)'};">${pk.sessoes_restantes}</div>
+                        <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Restantes</div>
+                    </div>
+                </div>
+                <div class="progress-bar" style="margin-top:12px;">
+                    <div class="progress-fill ${cor}" style="width:${perc}%"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${perc.toFixed(0)}% concluído</div>
+            </div>`;
+        }).join('');
+    }
+
+    // Histórico
+    const { data: sessoes } = await db.from('agendamentos')
+        .select('*')
+        .eq('paciente_id', pacienteId)
+        .order('data_sessao', { ascending: false });
+
+    const histDiv = document.getElementById('historico-sessoes');
+    if (!sessoes||!sessoes.length) {
+        histDiv.innerHTML = '<div class="empty-state"><p>Nenhuma sessão registrada.</p></div>';
+        return;
+    }
+    histDiv.innerHTML = `<table>
+        <thead><tr>
+            <th>Data</th><th>Horário</th><th>Tipo</th><th>Status</th><th>Observação</th>
+        </tr></thead>
+        <tbody>
+        ${sessoes.map(s => `<tr>
+            <td>${s.data_sessao?s.data_sessao.split('-').reverse().join('/'):'—'}</td>
+            <td>${s.horario?s.horario.slice(0,5):'—'}</td>
+            <td>${s.tipo==='avulso'?'Avulso':'Pacote'}${s.valor_cobrado?' · R$ '+Number(s.valor_cobrado).toFixed(2):''}</td>
+            <td><span class="status status-${s.status}">${s.status}</span></td>
+            <td style="color:var(--text-muted);font-size:12px;">${s.observacoes||'—'}</td>
+        </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function carregarGeral() {
+    const { data } = await db.from('pacientes')
+        .select('id,nome,pacientes_pacotes(total_sessoes,sessoes_realizadas,sessoes_restantes,status,pacotes_modelo(nome))')
+        .eq('ativo',true).order('nome');
+    dadosGeral = data||[];
+    renderizarGeral(dadosGeral);
+}
+
+function renderizarGeral(lista) {
+    const div = document.getElementById('tabela-geral');
+    if (!lista.length) {
+        div.innerHTML = '<div class="empty-state"><p>Nenhum paciente cadastrado.</p></div>';
+        return;
+    }
+    div.innerHTML = `<table>
+        <thead><tr>
+            <th>Paciente</th><th>Pacote Ativo</th><th>Realizadas</th><th>Restantes</th><th>Progresso</th><th>Ações</th>
+        </tr></thead>
+        <tbody>
+        ${lista.map(p => {
+            const ativo = (p.pacientes_pacotes||[]).find(pk => pk.status==='ativo');
+            if (!ativo) return `<tr>
+                <td><strong>${p.nome}</strong></td>
+                <td colspan="4"><span class="sessoes-badge alerta">Sem pacote ativo</span></td>
+                <td><a href="prontuario.html?id=${p.id}" class="btn btn-outline btn-sm">📋 Prontuário</a></td>
+            </tr>`;
+            const perc = ativo.total_sessoes>0?(ativo.sessoes_realizadas/ativo.total_sessoes*100):0;
+            const cor  = ativo.sessoes_restantes<=1?'red':ativo.sessoes_restantes<=2?'yellow':'';
+            return `<tr>
+                <td><strong>${p.nome}</strong></td>
+                <td>${ativo.pacotes_modelo?.nome||'Pacote'}</td>
+                <td style="color:#2d7a4f;font-weight:500;">${ativo.sessoes_realizadas}</td>
+                <td>
+                    <span class="sessoes-badge ${ativo.sessoes_restantes<=1?'critico':ativo.sessoes_restantes<=2?'alerta':'ok'}">
+                        ${ativo.sessoes_restantes} restante${ativo.sessoes_restantes!==1?'s':''}
+                    </span>
+                </td>
+                <td style="min-width:130px;">
+                    <div class="progress-bar">
+                        <div class="progress-fill ${cor}" style="width:${perc}%"></div>
+                    </div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${perc.toFixed(0)}%</div>
+                </td>
+                <td><a href="prontuario.html?id=${p.id}" class="btn btn-outline btn-sm">📋 Prontuário</a></td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+}
+
+function filtrarGeral() {
+    const t = document.getElementById('pesquisa-geral').value.toLowerCase();
+    renderizarGeral(dadosGeral.filter(p => p.nome.toLowerCase().includes(t)));
+}
+
+carregarPacientesSelect();
+carregarGeral();
+</script>
+</body>
+</html>

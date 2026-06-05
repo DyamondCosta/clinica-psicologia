@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agendamentos — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>◷ <span class="header-gold">Agendamentos</span></h1>
+        <p>Agenda de sessões e atendimentos</p>
+    </div>
+
+    <div class="container">
+
+        <div class="form-section">
+            <h2>Novo Agendamento</h2>
+            <input type="hidden" id="ag_id">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Paciente *</label>
+                    <select id="ag_paciente" onchange="carregarPacotesDoSelect()">
+                        <option value="">Selecione o paciente</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tipo de Sessão *</label>
+                    <select id="ag_tipo" onchange="alternarTipo()">
+                        <option value="pacote">Pacote</option>
+                        <option value="avulso">Avulso</option>
+                    </select>
+                </div>
+                <div class="form-group" id="campo-pacote">
+                    <label>Pacote do Paciente</label>
+                    <select id="ag_pacote">
+                        <option value="">Selecione o pacote</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Data da Sessão *</label>
+                    <input id="ag_data" type="date">
+                </div>
+                <div class="form-group">
+                    <label>Horário *</label>
+                    <input id="ag_horario" type="time">
+                </div>
+                <div class="form-group">
+                    <label>Duração (minutos)</label>
+                    <input id="ag_duracao" type="number" value="50" min="10" max="180">
+                </div>
+                <div class="form-group" id="campo-valor-avulso" style="display:none;">
+                    <label>Valor Cobrado (R$)</label>
+                    <input id="ag_valor" type="number" placeholder="Ex: 180.00">
+                </div>
+                <div class="form-group" id="campo-pagamento-avulso" style="display:none;">
+                    <label>Forma de Pagamento</label>
+                    <select id="ag_pagamento">
+                        <option>PIX</option>
+                        <option>Dinheiro</option>
+                        <option>Cartão Débito</option>
+                        <option>Cartão Crédito</option>
+                        <option>Transferência</option>
+                    </select>
+                </div>
+                <div class="form-group form-full">
+                    <label>Observações</label>
+                    <textarea id="ag_obs" placeholder="Observações sobre o agendamento..."></textarea>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarAgendamento()">💾 Salvar Agendamento</button>
+                <button class="btn btn-outline" onclick="limparAg()">Limpar</button>
+            </div>
+        </div>
+
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Agenda</h2>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <input id="filtro-data" type="date" onchange="carregarAgendamentos()" style="max-width:160px;">
+                    <select id="filtro-status" onchange="filtrarLista()" style="max-width:150px;">
+                        <option value="">Todos</option>
+                        <option value="agendado">Agendados</option>
+                        <option value="realizado">Realizados</option>
+                        <option value="cancelado">Cancelados</option>
+                        <option value="faltou">Faltou</option>
+                    </select>
+                    <input id="filtro-paciente" placeholder="Buscar paciente..." onkeyup="filtrarLista()" style="max-width:200px;">
+                </div>
+            </div>
+            <div id="lista-agendamentos"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let agendamentosCarregados = [];
+
+function hojeStr() { return new Date().toISOString().split('T')[0]; }
+
+function alternarTipo() {
+    const tipo = document.getElementById('ag_tipo').value;
+    document.getElementById('campo-pacote').style.display = tipo==='pacote' ? 'flex' : 'none';
+    document.getElementById('campo-valor-avulso').style.display = tipo==='avulso' ? 'flex' : 'none';
+    document.getElementById('campo-pagamento-avulso').style.display = tipo==='avulso' ? 'flex' : 'none';
+}
+
+async function carregarPacientesSelect() {
+    const { data } = await db.from('pacientes').select('id,nome').eq('ativo',true).order('nome');
+    const sel = document.getElementById('ag_paciente');
+    (data||[]).forEach(p => {
+        sel.innerHTML += `<option value="${p.id}">${p.nome}</option>`;
+    });
+}
+
+async function carregarPacotesDoSelect() {
+    const pacienteId = document.getElementById('ag_paciente').value;
+    const sel = document.getElementById('ag_pacote');
+    sel.innerHTML = '<option value="">Selecione</option>';
+    if (!pacienteId) return;
+    const { data } = await db.from('pacientes_pacotes')
+        .select('id,total_sessoes,sessoes_restantes,pacotes_modelo(nome)')
+        .eq('paciente_id', pacienteId).eq('status','ativo');
+    (data||[]).forEach(pk => {
+        sel.innerHTML += `<option value="${pk.id}">
+            ${pk.pacotes_modelo?.nome||'Pacote'} — ${pk.sessoes_restantes} sessões restantes
+        </option>`;
+    });
+}
+
+async function salvarAgendamento() {
+    const usuario = JSON.parse(sessionStorage.getItem('usuario_clinica'));
+    const id = document.getElementById('ag_id').value;
+    const pacienteId = document.getElementById('ag_paciente').value;
+    const tipo = document.getElementById('ag_tipo').value;
+    const data_sessao = document.getElementById('ag_data').value;
+    const horario = document.getElementById('ag_horario').value;
+    const duracao = document.getElementById('ag_duracao').value || 50;
+    const obs = document.getElementById('ag_obs').value;
+    const pacoteId = document.getElementById('ag_pacote').value;
+    const valor = Number(document.getElementById('ag_valor').value) || null;
+    const pagamento = document.getElementById('ag_pagamento').value;
+
+    if (!pacienteId) { alert('Selecione um paciente.'); return; }
+    if (!data_sessao) { alert('Informe a data da sessão.'); return; }
+    if (!horario)     { alert('Informe o horário.'); return; }
+    if (tipo==='pacote' && !pacoteId) { alert('Selecione um pacote.'); return; }
+
+    const payload = {
+        paciente_id: pacienteId,
+        psicologa_id: usuario?.id,
+        pacote_paciente_id: tipo==='pacote' ? pacoteId : null,
+        tipo, data_sessao, horario,
+        duracao_minutos: duracao,
+        status: 'agendado',
+        valor_cobrado: valor,
+        forma_pagamento: tipo==='avulso' ? pagamento : null,
+        observacoes: obs
+    };
+
+    if (id) {
+        await db.from('agendamentos').update(payload).eq('id', id);
+        alert('Agendamento atualizado!');
+    } else {
+        await db.from('agendamentos').insert([payload]);
+        alert('✅ Agendamento salvo!');
+    }
+    limparAg();
+    carregarAgendamentos();
+}
+
+async function darBaixa(id) {
+    if (!confirm('Confirmar realização desta sessão? Isso irá descontar do pacote.')) return;
+    const { data: ag } = await db.from('agendamentos').select('*').eq('id', id).single();
+    if (!ag) return;
+
+    await db.from('agendamentos').update({ status: 'realizado' }).eq('id', id);
+
+    if (ag.tipo==='pacote' && ag.pacote_paciente_id) {
+        const { data: pk } = await db.from('pacientes_pacotes')
+            .select('*').eq('id', ag.pacote_paciente_id).single();
+        if (pk) {
+            const novoRealizadas = (pk.sessoes_realizadas||0) + 1;
+            const novoRestantes  = Math.max(0,(pk.sessoes_restantes||0) - 1);
+            await db.from('pacientes_pacotes').update({
+                sessoes_realizadas: novoRealizadas,
+                sessoes_restantes: novoRestantes,
+                status: novoRestantes===0 ? 'concluido' : 'ativo'
+            }).eq('id', ag.pacote_paciente_id);
+        }
+    }
+
+    if (ag.tipo==='avulso' && ag.valor_cobrado) {
+        const { data: pac } = await db.from('pacientes').select('nome').eq('id', ag.paciente_id).single();
+        await db.from('financeiro').insert([{
+            paciente_id: ag.paciente_id,
+            agendamento_id: id,
+            tipo: 'ENTRADA',
+            descricao: `Sessão avulsa — ${pac?.nome||'Paciente'}`,
+            valor: ag.valor_cobrado,
+            forma_pagamento: ag.forma_pagamento,
+            data_movimento: ag.data_sessao
+        }]);
+    }
+
+    alert('✅ Sessão realizada e baixa efetuada!');
+    carregarAgendamentos();
+}
+
+async function marcarFalta(id) {
+    if (!confirm('Marcar falta para este paciente?')) return;
+    await db.from('agendamentos').update({ status: 'faltou' }).eq('id', id);
+    carregarAgendamentos();
+}
+
+async function cancelarAgendamento(id) {
+    if (!confirm('Cancelar este agendamento?')) return;
+    await db.from('agendamentos').update({ status: 'cancelado' }).eq('id', id);
+    carregarAgendamentos();
+}
+
+async function carregarAgendamentos() {
+    const filtroData = document.getElementById('filtro-data').value;
+    let query = db.from('agendamentos')
+        .select('*, pacientes(nome), pacientes_pacotes(sessoes_restantes, pacotes_modelo(nome))')
+        .order('data_sessao', { ascending: false })
+        .order('horario');
+    if (filtroData) query = query.eq('data_sessao', filtroData);
+    const { data } = await query;
+    agendamentosCarregados = data || [];
+    filtrarLista();
+}
+
+function filtrarLista() {
+    const texto  = document.getElementById('filtro-paciente').value.toLowerCase();
+    const status = document.getElementById('filtro-status').value;
+    let lista = agendamentosCarregados;
+    if (texto)  lista = lista.filter(ag => (ag.pacientes?.nome||'').toLowerCase().includes(texto));
+    if (status) lista = lista.filter(ag => ag.status === status);
+    renderizarAgendamentos(lista);
+}
+
+function renderizarAgendamentos(lista) {
+    const div = document.getElementById('lista-agendamentos');
+    if (!lista.length) {
+        div.innerHTML = '<div class="empty-state"><div class="empty-icon">◷</div><p>Nenhum agendamento encontrado.</p></div>';
+        return;
+    }
+    div.innerHTML = `<table>
+        <thead><tr>
+            <th>Data</th><th>Horário</th><th>Paciente</th><th>Tipo</th><th>Sessões Rest.</th><th>Status</th><th>Ações</th>
+        </tr></thead>
+        <tbody>
+        ${lista.map(ag => {
+            const data    = ag.data_sessao ? ag.data_sessao.split('-').reverse().join('/') : '—';
+            const horario = ag.horario ? ag.horario.slice(0,5) : '—';
+            const rest    = ag.pacientes_pacotes?.sessoes_restantes;
+            const restStr = ag.tipo==='pacote' && rest!==undefined
+                ? `<span class="sessoes-badge ${rest<=1?'critico':rest<=2?'alerta':'ok'}">${rest}</span>`
+                : '<span style="color:var(--text-muted)">Avulso</span>';
+            const acoes = ag.status==='agendado' ? `
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button class="btn btn-green btn-sm" onclick="darBaixa(${ag.id})">✅ Realizar</button>
+                    <button class="btn btn-outline btn-sm" onclick="marcarFalta(${ag.id})">❌ Falta</button>
+                    <button class="btn btn-danger btn-sm" onclick="cancelarAgendamento(${ag.id})">🚫</button>
+                </div>`
+                : `<span class="status status-${ag.status}">${ag.status}</span>`;
+            return `<tr>
+                <td>${data}</td>
+                <td><strong>${horario}</strong></td>
+                <td>
+                    <a href="prontuario.html?id=${ag.paciente_id}"
+                       style="color:var(--gold-dark);text-decoration:none;font-weight:500;">
+                        ${ag.pacientes?.nome||'—'}
+                    </a>
+                </td>
+                <td>${ag.tipo==='avulso'?'Avulso':ag.pacientes_pacotes?.pacotes_modelo?.nome||'Pacote'}</td>
+                <td>${restStr}</td>
+                <td>${acoes}</td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+}
+
+function limparAg() {
+    ['ag_id','ag_data','ag_horario','ag_obs','ag_valor'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    document.getElementById('ag_paciente').value = '';
+    document.getElementById('ag_tipo').value = 'pacote';
+    document.getElementById('ag_duracao').value = 50;
+    alternarTipo();
+}
+
+document.getElementById('filtro-data').value = hojeStr();
+carregarPacientesSelect();
+carregarAgendamentos();
+</script>
+</body>
+</html>

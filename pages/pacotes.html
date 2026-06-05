@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pacotes — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>❖ <span class="header-gold">Pacotes</span></h1>
+        <p>Modelos de pacotes de sessões</p>
+    </div>
+
+    <div class="container">
+
+        <div class="form-section">
+            <h2>Novo Modelo de Pacote</h2>
+            <input type="hidden" id="pacote_id">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nome do Pacote *</label>
+                    <input id="nome" placeholder="Ex: Pacote Mensal">
+                </div>
+                <div class="form-group">
+                    <label>Total de Sessões *</label>
+                    <input id="total_sessoes" type="number" min="1" placeholder="Ex: 8">
+                </div>
+                <div class="form-group">
+                    <label>Valor Total (R$) *</label>
+                    <input id="valor" type="number" placeholder="Ex: 1100.00">
+                </div>
+                <div class="form-group">
+                    <label>Valor por Sessão (calculado)</label>
+                    <input id="valor_sessao" readonly placeholder="—"
+                        style="background:#f0ebe0;color:var(--gold-dark);font-weight:600;">
+                </div>
+                <div class="form-group form-full">
+                    <label>Descrição</label>
+                    <textarea id="descricao" placeholder="Descreva o pacote..."></textarea>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarPacote()">💾 Salvar Pacote</button>
+                <button class="btn btn-outline" onclick="limpar()">Limpar</button>
+            </div>
+        </div>
+
+        <!-- SESSÃO AVULSA -->
+        <div class="form-section">
+            <h2>Sessão Avulsa</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Valor por Sessão (R$)</label>
+                    <input id="valor_avulso" type="number" placeholder="Ex: 180.00">
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarAvulso()">💾 Atualizar Valor</button>
+            </div>
+        </div>
+
+        <!-- LISTA -->
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Pacotes Cadastrados</h2>
+            </div>
+            <div id="lista-pacotes"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let pacotesCarregados = [];
+
+document.getElementById('total_sessoes').addEventListener('input', calcularValorSessao);
+document.getElementById('valor').addEventListener('input', calcularValorSessao);
+
+function calcularValorSessao() {
+    const sessoes = Number(document.getElementById('total_sessoes').value);
+    const valor   = Number(document.getElementById('valor').value);
+    document.getElementById('valor_sessao').value =
+        sessoes>0 && valor>0 ? 'R$ '+(valor/sessoes).toFixed(2) : '';
+}
+
+async function salvarPacote() {
+    const id           = document.getElementById('pacote_id').value;
+    const nome         = document.getElementById('nome').value.trim();
+    const total_sessoes= Number(document.getElementById('total_sessoes').value);
+    const valor        = Number(document.getElementById('valor').value);
+    const descricao    = document.getElementById('descricao').value;
+
+    if (!nome)                      { alert('Informe o nome do pacote.'); return; }
+    if (!total_sessoes||total_sessoes<1){ alert('Informe o total de sessões.'); return; }
+    if (!valor||valor<=0)           { alert('Informe o valor.'); return; }
+
+    const payload = { nome, total_sessoes, valor, descricao, ativo: true };
+
+    if (id) {
+        await db.from('pacotes_modelo').update(payload).eq('id', id);
+        alert('Pacote atualizado!');
+    } else {
+        await db.from('pacotes_modelo').insert([payload]);
+        alert('✅ Pacote criado!');
+    }
+    limpar();
+    carregarPacotes();
+}
+
+async function salvarAvulso() {
+    const valor = Number(document.getElementById('valor_avulso').value);
+    if (!valor||valor<=0) { alert('Informe o valor.'); return; }
+    const { data } = await db.from('sessoes_avulsas_config').select('id').limit(1);
+    if (data&&data.length>0) {
+        await db.from('sessoes_avulsas_config').update({ valor }).eq('id', data[0].id);
+    } else {
+        await db.from('sessoes_avulsas_config').insert([{ valor, descricao:'Sessão Avulsa' }]);
+    }
+    alert('✅ Valor atualizado!');
+}
+
+async function carregarPacotes() {
+    const { data } = await db.from('pacotes_modelo').select('*').order('total_sessoes');
+    pacotesCarregados = data||[];
+    const div = document.getElementById('lista-pacotes');
+    if (!pacotesCarregados.length) {
+        div.innerHTML = '<div class="empty-state"><div class="empty-icon">❖</div><p>Nenhum pacote cadastrado.</p></div>';
+        return;
+    }
+    div.innerHTML = `<table>
+        <thead><tr>
+            <th>Nome</th><th>Sessões</th><th>Valor Total</th><th>Valor/Sessão</th><th>Status</th><th>Ações</th>
+        </tr></thead>
+        <tbody>
+        ${pacotesCarregados.map(p => `<tr>
+            <td>
+                <strong>${p.nome}</strong>
+                ${p.descricao?`<br><span style="color:var(--text-muted);font-size:12px;">${p.descricao}</span>`:''}
+            </td>
+            <td>${p.total_sessoes} sessões</td>
+            <td><strong>R$ ${Number(p.valor).toFixed(2)}</strong></td>
+            <td style="color:var(--gold-dark);font-weight:500;">
+                R$ ${(Number(p.valor)/p.total_sessoes).toFixed(2)}
+            </td>
+            <td>
+                <span class="status ${p.ativo?'status-ativo':'status-cancelado'}">
+                    ${p.ativo?'Ativo':'Inativo'}
+                </span>
+            </td>
+            <td>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-outline btn-sm" onclick="editarPacote(${p.id})">✏️ Editar</button>
+                    <button class="btn btn-danger btn-sm" onclick="toggleAtivo(${p.id},${p.ativo})">
+                        ${p.ativo?'🚫 Inativar':'✅ Ativar'}
+                    </button>
+                </div>
+            </td>
+        </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+function editarPacote(id) {
+    const p = pacotesCarregados.find(x => x.id===id);
+    if (!p) return;
+    document.getElementById('pacote_id').value    = p.id;
+    document.getElementById('nome').value         = p.nome;
+    document.getElementById('total_sessoes').value= p.total_sessoes;
+    document.getElementById('valor').value        = p.valor;
+    document.getElementById('descricao').value    = p.descricao||'';
+    calcularValorSessao();
+    window.scrollTo(0,0);
+}
+
+async function toggleAtivo(id, atual) {
+    await db.from('pacotes_modelo').update({ ativo: !atual }).eq('id', id);
+    carregarPacotes();
+}
+
+async function carregarValorAvulso() {
+    const { data } = await db.from('sessoes_avulsas_config').select('valor').limit(1);
+    if (data&&data.length>0)
+        document.getElementById('valor_avulso').value = data[0].valor;
+}
+
+function limpar() {
+    ['pacote_id','nome','total_sessoes','valor','valor_sessao','descricao'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+}
+
+carregarPacotes();
+carregarValorAvulso();
+</script>
+</body>
+</html>

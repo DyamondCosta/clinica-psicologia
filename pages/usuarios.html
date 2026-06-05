@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usuários — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>◎ <span class="header-gold">Usuários</span></h1>
+        <p>Gerenciamento de acesso ao sistema</p>
+    </div>
+
+    <div class="container">
+
+        <div class="form-section">
+            <h2>Novo Usuário</h2>
+            <input type="hidden" id="user_id">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nome Completo *</label>
+                    <input id="user_nome" placeholder="Nome do usuário">
+                </div>
+                <div class="form-group">
+                    <label>E-mail *</label>
+                    <input id="user_email" type="email" placeholder="email@exemplo.com">
+                </div>
+                <div class="form-group">
+                    <label>Senha *</label>
+                    <input id="user_senha" type="password" placeholder="Senha de acesso">
+                </div>
+                <div class="form-group">
+                    <label>Perfil</label>
+                    <select id="user_perfil">
+                        <option value="psicologa">Psicóloga</option>
+                        <option value="secretaria">Secretária</option>
+                        <option value="proprietaria">Proprietária</option>
+                        <option value="master">Master</option>
+                    </select>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarUsuario()">💾 Salvar Usuário</button>
+                <button class="btn btn-outline" onclick="limpar()">Limpar</button>
+            </div>
+        </div>
+
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Usuários do Sistema</h2>
+            </div>
+            <div id="lista-usuarios"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let usuariosCarregados = [];
+
+const perfilLabels = {
+    master:       'Master',
+    proprietaria: 'Proprietária',
+    psicologa:    'Psicóloga',
+    secretaria:   'Secretária'
+};
+
+async function carregarUsuarios() {
+    const { data } = await db.from('usuarios').select('*').order('nome');
+    usuariosCarregados = data||[];
+    const div = document.getElementById('lista-usuarios');
+    if (!usuariosCarregados.length) {
+        div.innerHTML = '<div class="empty-state"><p>Nenhum usuário cadastrado.</p></div>';
+        return;
+    }
+    div.innerHTML = `<table>
+        <thead><tr>
+            <th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ações</th>
+        </tr></thead>
+        <tbody>
+        ${usuariosCarregados.map(u => `<tr>
+            <td>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:34px;height:34px;border-radius:50%;
+                        background:linear-gradient(135deg,var(--gold-dark),var(--gold));
+                        display:flex;align-items:center;justify-content:center;
+                        color:#fff;font-family:'Cormorant Garamond',serif;font-size:16px;">
+                        ${u.nome[0]}
+                    </div>
+                    <strong>${u.nome}</strong>
+                </div>
+            </td>
+            <td style="color:var(--text-muted);">${u.email}</td>
+            <td><span class="status status-ativo">${perfilLabels[u.perfil]||u.perfil}</span></td>
+            <td>
+                <span class="status ${u.ativo?'status-realizado':'status-cancelado'}">
+                    ${u.ativo?'Ativo':'Inativo'}
+                </span>
+            </td>
+            <td>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-outline btn-sm" onclick="editarUsuario('${u.id}')">✏️ Editar</button>
+                    <button class="btn btn-danger btn-sm" onclick="toggleUsuario('${u.id}',${u.ativo})">
+                        ${u.ativo?'Inativar':'Ativar'}
+                    </button>
+                </div>
+            </td>
+        </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function salvarUsuario() {
+    const id     = document.getElementById('user_id').value;
+    const nome   = document.getElementById('user_nome').value.trim();
+    const email  = document.getElementById('user_email').value.trim();
+    const senha  = document.getElementById('user_senha').value.trim();
+    const perfil = document.getElementById('user_perfil').value;
+
+    if (!nome||!email) { alert('Nome e e-mail são obrigatórios.'); return; }
+
+    const payload = { nome, email, perfil, ativo: true };
+    if (senha) payload.senha_hash = senha;
+
+    if (id) {
+        await db.from('usuarios').update(payload).eq('id', id);
+        alert('Usuário atualizado!');
+    } else {
+        if (!senha) { alert('Informe uma senha para o novo usuário.'); return; }
+        const { error } = await db.from('usuarios').insert([payload]);
+        if (error) { alert('Erro: e-mail já cadastrado.'); return; }
+        alert('✅ Usuário criado!');
+    }
+    limpar();
+    carregarUsuarios();
+}
+
+function editarUsuario(id) {
+    const u = usuariosCarregados.find(x => x.id===id);
+    if (!u) return;
+    document.getElementById('user_id').value    = u.id;
+    document.getElementById('user_nome').value  = u.nome;
+    document.getElementById('user_email').value = u.email;
+    document.getElementById('user_senha').value = '';
+    document.getElementById('user_perfil').value= u.perfil;
+    window.scrollTo(0,0);
+}
+
+async function toggleUsuario(id, ativo) {
+    await db.from('usuarios').update({ ativo: !ativo }).eq('id', id);
+    carregarUsuarios();
+}
+
+function limpar() {
+    ['user_id','user_nome','user_email','user_senha'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('user_perfil').value = 'psicologa';
+}
+
+carregarUsuarios();
+</script>
+</body>
+</html>

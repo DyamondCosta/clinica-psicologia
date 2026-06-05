@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ana Maria Caetano — Sistema de Gestão</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="login-page">
+    <div class="login-box">
+
+        <img src="assets/logo.png" alt="Logo" class="login-logo"
+             style="background:transparent;"
+             onerror="this.outerHTML='<div style=\'font-size:52px;margin-bottom:16px;\'>🦋</div>'">
+
+        <h1 class="login-title">Ana Maria Caetano</h1>
+        <p class="login-sub">Psicóloga &amp; Psicanalista</p>
+
+        <div class="login-divider"><span>✦</span></div>
+
+        <input type="email" id="email" placeholder="E-mail" autocomplete="email">
+        <input type="password" id="senha" placeholder="Senha"
+               onkeydown="if(event.key==='Enter') entrar()">
+
+        <button class="btn-login" onclick="entrar()">Entrar</button>
+
+        <p class="login-error" id="erro"></p>
+
+        <p class="login-dev">LC Solutions ERP · Todos os direitos reservados</p>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function entrar() {
+    const email = document.getElementById('email').value.trim();
+    const senha = document.getElementById('senha').value.trim();
+    const erro  = document.getElementById('erro');
+    erro.style.display = 'none';
+
+    if (!email || !senha) {
+        erro.textContent = 'Preencha e-mail e senha.';
+        erro.style.display = 'block';
+        return;
+    }
+
+    const { data, error } = await db
+        .from('usuarios')
+        .select('*')
+        .eq('email', email)
+        .eq('senha_hash', senha)
+        .eq('ativo', true)
+        .single();
+
+    if (error || !data) {
+        erro.textContent = 'E-mail ou senha incorretos.';
+        erro.style.display = 'block';
+        return;
+    }
+
+    sessionStorage.setItem('usuario_clinica', JSON.stringify(data));
+    window.location.href = 'pages/dashboard.html';
+}
+</script>
+</body>
+</html>

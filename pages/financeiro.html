@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Financeiro — Ana Maria Caetano</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<div class="sidebar"></div>
+
+<div class="main">
+    <div class="header">
+        <h1>◈ <span class="header-gold">Financeiro</span></h1>
+        <p>Controle de entradas e pagamentos</p>
+    </div>
+
+    <div class="container">
+
+        <div class="cards-grid">
+            <div class="card-stat">
+                <div class="card-stat-label">Entradas do Mês</div>
+                <div class="card-stat-value green" id="total-entradas">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Saídas do Mês</div>
+                <div class="card-stat-value red" id="total-saidas">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Saldo do Mês</div>
+                <div class="card-stat-value gold" id="saldo-mes">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Transações</div>
+                <div class="card-stat-value" id="num-transacoes">—</div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2>Lançamento Manual</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Tipo *</label>
+                    <select id="fin_tipo">
+                        <option value="ENTRADA">Entrada</option>
+                        <option value="SAIDA">Saída</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Data *</label>
+                    <input id="fin_data" type="date">
+                </div>
+                <div class="form-group">
+                    <label>Descrição *</label>
+                    <input id="fin_descricao" placeholder="Ex: Pagamento sessão avulsa">
+                </div>
+                <div class="form-group">
+                    <label>Valor (R$) *</label>
+                    <input id="fin_valor" type="number" placeholder="Ex: 180.00">
+                </div>
+                <div class="form-group">
+                    <label>Paciente (opcional)</label>
+                    <select id="fin_paciente">
+                        <option value="">Nenhum</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Forma de Pagamento</label>
+                    <select id="fin_pagamento">
+                        <option>PIX</option>
+                        <option>Dinheiro</option>
+                        <option>Cartão Débito</option>
+                        <option>Cartão Crédito</option>
+                        <option>Transferência</option>
+                    </select>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="salvarLancamento()">💾 Salvar Lançamento</button>
+            </div>
+        </div>
+
+        <div class="table-section">
+            <div class="table-header">
+                <h2>Extrato</h2>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                    <input id="filtro-mes" type="month" onchange="carregarFinanceiro()" style="max-width:160px;">
+                    <select id="filtro-tipo" onchange="filtrarExtrato()" style="max-width:140px;">
+                        <option value="">Todos</option>
+                        <option value="ENTRADA">Entradas</option>
+                        <option value="SAIDA">Saídas</option>
+                    </select>
+                    <input id="filtro-paciente-fin" placeholder="Buscar paciente..." onkeyup="filtrarExtrato()" style="max-width:200px;">
+                </div>
+            </div>
+            <div id="lista-financeiro"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let registrosCarregados = [];
+
+function hojeStr() { return new Date().toISOString().split('T')[0]; }
+function mesAtual() { return new Date().toISOString().slice(0,7); }
+
+async function carregarPacientesSelect() {
+    const { data } = await db.from('pacientes').select('id,nome').eq('ativo',true).order('nome');
+    const sel = document.getElementById('fin_paciente');
+    (data||[]).forEach(p => {
+        sel.innerHTML += `<option value="${p.id}">${p.nome}</option>`;
+    });
+}
+
+async function salvarLancamento() {
+    const tipo           = document.getElementById('fin_tipo').value;
+    const data_movimento = document.getElementById('fin_data').value;
+    const descricao      = document.getElementById('fin_descricao').value.trim();
+    const valor          = Number(document.getElementById('fin_valor').value);
+    const paciente_id    = document.getElementById('fin_paciente').value || null;
+    const forma_pagamento= document.getElementById('fin_pagamento').value;
+
+    if (!descricao)          { alert('Informe a descrição.'); return; }
+    if (!valor||valor<=0)    { alert('Informe o valor.'); return; }
+    if (!data_movimento)     { alert('Informe a data.'); return; }
+
+    const { error } = await db.from('financeiro').insert([{
+        tipo, descricao, valor, paciente_id, forma_pagamento, data_movimento
+    }]);
+
+    if (error) { alert('Erro ao salvar.'); return; }
+    alert('✅ Lançamento salvo!');
+    document.getElementById('fin_descricao').value = '';
+    document.getElementById('fin_valor').value     = '';
+    document.getElementById('fin_paciente').value  = '';
+    carregarFinanceiro();
+}
+
+async function carregarFinanceiro() {
+    const mes  = document.getElementById('filtro-mes').value || mesAtual();
+    const [ano, m] = mes.split('-');
+    const ini  = `${ano}-${m}-01`;
+    const fim  = `${ano}-${m}-31`;
+
+    const { data } = await db.from('financeiro')
+        .select('*, pacientes(nome)')
+        .gte('data_movimento', ini)
+        .lte('data_movimento', fim)
+        .order('data_movimento', { ascending: false });
+
+    registrosCarregados = data||[];
+
+    const entradas = registrosCarregados.filter(r=>r.tipo==='ENTRADA').reduce((s,r)=>s+Number(r.valor),0);
+    const saidas   = registrosCarregados.filter(r=>r.tipo==='SAIDA').reduce((s,r)=>s+Number(r.valor),0);
+    const saldo    = entradas - saidas;
+
+    document.getElementById('total-entradas').textContent  = 'R$ '+entradas.toFixed(2).replace('.',',');
+    document.getElementById('total-saidas').textContent    = 'R$ '+saidas.toFixed(2).replace('.',',');
+    document.getElementById('saldo-mes').textContent       = 'R$ '+saldo.toFixed(2).replace('.',',');
+    document.getElementById('num-transacoes').textContent  = registrosCarregados.length;
+
+    filtrarExtrato();
+}
+
+function filtrarExtrato() {
+    const tipo    = document.getElementById('filtro-tipo').value;
+    const texto   = document.getElementById('filtro-paciente-fin').value.toLowerCase();
+    let lista = registrosCarregados;
+    if (tipo)  lista = lista.filter(r => r.tipo===tipo);
+    if (texto) lista = lista.filter(r => (r.pacientes?.nome||'').toLowerCase().includes(texto) || r.descricao.toLowerCase().includes(texto));
+    renderizarExtrato(lista);
+}
+
+function renderizarExtrato(lista) {
+    const div = document.getElementById('lista-financeiro');
+    if (!lista.length) {
+        div.innerHTML = '<div class="empty-state"><div class="empty-icon">◈</div><p>Nenhum lançamento neste período.</p></div>';
+        return;
+    }
+    div.innerHTML = `<table>
+        <thead><tr>
+            <th>Data</th><th>Descrição</th><th>Paciente</th><th>Forma</th><th>Valor</th><th>Ações</th>
+        </tr></thead>
+        <tbody>
+        ${lista.map(r => `<tr>
+            <td>${r.data_movimento?r.data_movimento.split('-').reverse().join('/'):'—'}</td>
+            <td>${r.descricao}</td>
+            <td style="color:var(--text-muted);">${r.pacientes?.nome||'—'}</td>
+            <td style="color:var(--text-muted);font-size:12px;">${r.forma_pagamento||'—'}</td>
+            <td style="font-weight:600;color:${r.tipo==='ENTRADA'?'#2d7a4f':'#b84040'};">
+                ${r.tipo==='ENTRADA'?'+':'-'} R$ ${Number(r.valor).toFixed(2)}
+            </td>
+            <td>
+                <button class="btn btn-danger btn-sm" onclick="excluirLancamento(${r.id})">🗑️</button>
+            </td>
+        </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function excluirLancamento(id) {
+    if (!confirm('Excluir este lançamento?')) return;
+    await db.from('financeiro').delete().eq('id', id);
+    carregarFinanceiro();
+}
+
+document.getElementById('fin_data').value    = hojeStr();
+document.getElementById('filtro-mes').value  = mesAtual();
+carregarPacientesSelect();
+carregarFinanceiro();
+</script>
+</body>
+</html>
