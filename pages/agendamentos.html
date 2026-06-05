@@ -78,7 +78,6 @@
             </div>
         </div>
 
-        <!-- FILTROS -->
         <div class="table-section">
             <div class="table-header">
                 <h2>Agenda</h2>
@@ -129,7 +128,42 @@
         </div>
         <div class="btn-group">
             <button class="btn btn-primary" onclick="salvarEdicao()">💾 Salvar</button>
-            <button class="btn btn-outline" onclick="fecharModal()">Cancelar</button>
+            <button class="btn btn-outline" onclick="fecharModal('modal-editar')">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL DAR BAIXA -->
+<div class="modal-overlay" id="modal-baixa">
+    <div class="modal">
+        <h2>✅ Registrar Sessão Realizada</h2>
+        <input type="hidden" id="baixa_id">
+
+        <div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:10px;padding:16px;margin-bottom:20px;">
+            <div id="baixa-info" style="font-size:14px;color:var(--text);line-height:1.8;"></div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+            <label>Valor Recebido (R$) *</label>
+            <input id="baixa_valor" type="number" placeholder="Ex: 180.00">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+            <label>Forma de Pagamento *</label>
+            <select id="baixa_pagamento">
+                <option>PIX</option>
+                <option>Dinheiro</option>
+                <option>Cartão Débito</option>
+                <option>Cartão Crédito</option>
+                <option>Transferência</option>
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom:20px;">
+            <label>Observações</label>
+            <textarea id="baixa_obs" placeholder="Observações sobre o pagamento..."></textarea>
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-green" onclick="confirmarBaixa()">✅ Confirmar Sessão e Pagamento</button>
+            <button class="btn btn-outline" onclick="fecharModal('modal-baixa')">Cancelar</button>
         </div>
     </div>
 </div>
@@ -141,6 +175,7 @@
 <script>
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let agendamentosCarregados = [];
+let agendamentoSelecionado = null;
 
 function hojeStr() { return new Date().toISOString().split('T')[0]; }
 
@@ -195,15 +230,12 @@ async function salvarAgendamento() {
     const duracao = document.getElementById('ag_duracao').value || 50;
     const obs = document.getElementById('ag_obs').value;
     const pacoteId = document.getElementById('ag_pacote').value;
-    const valor = Number(document.getElementById('ag_valor').value) || null;
-    const pagamento = document.getElementById('ag_pagamento').value;
 
     if (!pacienteId) { alert('Selecione um paciente.'); return; }
     if (!data_sessao) { alert('Informe a data da sessão.'); return; }
-    if (!horario)     { alert('Informe o horário.'); return; }
+    if (!horario) { alert('Informe o horário.'); return; }
     if (tipo==='pacote' && !pacoteId) { alert('Selecione um pacote ativo.'); return; }
 
-    // Verifica se o pacote tem sessões
     if (tipo==='pacote' && pacoteId) {
         const { data: pk } = await db.from('pacientes_pacotes')
             .select('sessoes_restantes').eq('id', pacoteId).single();
@@ -220,8 +252,6 @@ async function salvarAgendamento() {
         tipo, data_sessao, horario,
         duracao_minutos: duracao,
         status: 'agendado',
-        valor_cobrado: valor,
-        forma_pagamento: tipo==='avulso' ? pagamento : null,
         observacoes: obs
     };
 
@@ -236,16 +266,50 @@ async function salvarAgendamento() {
     carregarAgendamentos();
 }
 
-async function darBaixa(id) {
-    if (!confirm('Confirmar realização desta sessão? Isso irá descontar do pacote.')) return;
-    const { data: ag } = await db.from('agendamentos').select('*').eq('id',id).single();
+// ABRE MODAL DE BAIXA
+async function abrirBaixa(id) {
+    const { data: ag } = await db.from('agendamentos')
+        .select('*, pacientes(nome), pacientes_pacotes(sessoes_restantes, pacotes_modelo(nome))')
+        .eq('id', id).single();
     if (!ag) return;
 
-    await db.from('agendamentos').update({ status:'realizado' }).eq('id',id);
+    agendamentoSelecionado = ag;
+    document.getElementById('baixa_id').value = id;
+    document.getElementById('baixa_valor').value = '';
+    document.getElementById('baixa_obs').value = '';
 
+    const restantes = ag.pacientes_pacotes?.sessoes_restantes || 0;
+    document.getElementById('baixa-info').innerHTML = `
+        <strong>Paciente:</strong> ${ag.pacientes?.nome||'—'}<br>
+        <strong>Data:</strong> ${ag.data_sessao?.split('-').reverse().join('/')}<br>
+        <strong>Horário:</strong> ${ag.horario?.slice(0,5)}<br>
+        <strong>Tipo:</strong> ${ag.tipo==='avulso'?'Sessão Avulsa':ag.pacientes_pacotes?.pacotes_modelo?.nome||'Pacote'}<br>
+        ${ag.tipo==='pacote'?`<strong>Sessões restantes após baixa:</strong> <span style="color:${restantes<=2?'#e07070':'#4daa70'}">${Math.max(0,restantes-1)}</span>`:''}
+    `;
+
+    document.getElementById('modal-baixa').classList.add('open');
+}
+
+async function confirmarBaixa() {
+    const id = document.getElementById('baixa_id').value;
+    const valor = Number(document.getElementById('baixa_valor').value);
+    const pagamento = document.getElementById('baixa_pagamento').value;
+    const obs = document.getElementById('baixa_obs').value;
+    const ag = agendamentoSelecionado;
+
+    if (!valor || valor <= 0) { alert('Informe o valor recebido.'); return; }
+
+    // Atualiza status do agendamento
+    await db.from('agendamentos').update({
+        status: 'realizado',
+        valor_cobrado: valor,
+        forma_pagamento: pagamento
+    }).eq('id', id);
+
+    // Desconta do pacote
     if (ag.tipo==='pacote' && ag.pacote_paciente_id) {
         const { data: pk } = await db.from('pacientes_pacotes')
-            .select('*').eq('id',ag.pacote_paciente_id).single();
+            .select('*').eq('id', ag.pacote_paciente_id).single();
         if (pk) {
             const novoReal = (pk.sessoes_realizadas||0) + 1;
             const novoRest = Math.max(0,(pk.sessoes_restantes||0) - 1);
@@ -257,20 +321,23 @@ async function darBaixa(id) {
         }
     }
 
-    if (ag.tipo==='avulso' && ag.valor_cobrado) {
-        const { data: pac } = await db.from('pacientes').select('nome').eq('id',ag.paciente_id).single();
-        await db.from('financeiro').insert([{
-            paciente_id: ag.paciente_id,
-            agendamento_id: id,
-            tipo: 'ENTRADA',
-            descricao: `Sessão avulsa — ${pac?.nome||'Paciente'}`,
-            valor: ag.valor_cobrado,
-            forma_pagamento: ag.forma_pagamento,
-            data_movimento: ag.data_sessao
-        }]);
-    }
+    // Lança no financeiro
+    await db.from('financeiro').insert([{
+        paciente_id: ag.paciente_id,
+        agendamento_id: Number(id),
+        tipo: 'ENTRADA',
+        descricao: ag.tipo==='avulso'
+            ? `Sessão avulsa — ${ag.pacientes?.nome||'Paciente'}`
+            : `Sessão de pacote — ${ag.pacientes?.nome||'Paciente'}`,
+        valor,
+        forma_pagamento: pagamento,
+        data_movimento: ag.data_sessao,
+        observacoes: obs
+    }]);
 
-    alert('✅ Sessão realizada e baixa efetuada!');
+    alert('✅ Sessão realizada e pagamento registrado!');
+    fecharModal('modal-baixa');
+    agendamentoSelecionado = null;
     carregarAgendamentos();
 }
 
@@ -307,20 +374,17 @@ async function salvarEdicao() {
     const horario = document.getElementById('edit_horario').value;
     const duracao = document.getElementById('edit_duracao').value;
     const obs = document.getElementById('edit_obs').value;
-
     if (!data_sessao||!horario) { alert('Preencha data e horário.'); return; }
-
     await db.from('agendamentos').update({
         data_sessao, horario, duracao_minutos: duracao, observacoes: obs
     }).eq('id', id);
-
     alert('✅ Agendamento atualizado!');
-    fecharModal();
+    fecharModal('modal-editar');
     carregarAgendamentos();
 }
 
-function fecharModal() {
-    document.getElementById('modal-editar').classList.remove('open');
+function fecharModal(id) {
+    document.getElementById(id).classList.remove('open');
 }
 
 async function carregarAgendamentos() {
@@ -335,12 +399,12 @@ async function carregarAgendamentos() {
 
     if (filtroData) {
         query = query.eq('data_sessao', filtroData);
-    } else if (periodo === 'hoje') {
+    } else if (periodo==='hoje') {
         query = query.eq('data_sessao', hoje);
-    } else if (periodo === 'semana') {
+    } else if (periodo==='semana') {
         const fim = new Date(); fim.setDate(fim.getDate()+7);
         query = query.gte('data_sessao', hoje).lte('data_sessao', fim.toISOString().split('T')[0]);
-    } else if (periodo === 'mes') {
+    } else if (periodo==='mes') {
         query = query.gte('data_sessao', hoje.slice(0,7)+'-01').lte('data_sessao', hoje.slice(0,7)+'-31');
     }
 
@@ -366,7 +430,7 @@ function renderizarAgendamentos(lista) {
     }
     div.innerHTML = `<table>
         <thead><tr>
-            <th>Data</th><th>Horário</th><th>Paciente</th><th>Tipo</th><th>Sessões Rest.</th><th>Status</th><th>Ações</th>
+            <th>Data</th><th>Horário</th><th>Paciente</th><th>Tipo</th><th>Sessões</th><th>Valor</th><th>Status</th><th>Ações</th>
         </tr></thead>
         <tbody>
         ${lista.map(ag => {
@@ -376,22 +440,26 @@ function renderizarAgendamentos(lista) {
             const rest = ag.pacientes_pacotes?.sessoes_restantes;
             const restStr = ag.tipo==='pacote' && rest!==undefined
                 ? `<span class="sessoes-badge ${rest<=1?'critico':rest<=2?'alerta':'ok'}">${rest}</span>`
-                : '<span style="color:var(--text-muted)">Avulso</span>';
+                : '<span style="color:var(--text-muted);font-size:12px;">Avulso</span>';
 
             let dataLabel = data;
             if (ag.status==='agendado') {
-                if (dias===0) dataLabel += ' <span style="color:#e07070;font-size:11px;">HOJE</span>';
+                if (dias===0) dataLabel += ' <span style="color:#e07070;font-size:11px;font-weight:700;">HOJE</span>';
                 else if (dias===1) dataLabel += ' <span style="color:#E8C97A;font-size:11px;">AMANHÃ</span>';
                 else if (dias>0 && dias<=7) dataLabel += ` <span style="color:#9A9080;font-size:11px;">${dias}d</span>`;
             }
 
+            const valorStr = ag.valor_cobrado
+                ? `<span style="color:#4daa70;font-weight:600;">R$ ${Number(ag.valor_cobrado).toFixed(2)}</span>`
+                : `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
+
             const acoes = ag.status==='agendado' ? `
                 <div style="display:flex;gap:5px;flex-wrap:wrap;">
-                    <button class="btn btn-green btn-sm" onclick="darBaixa(${ag.id})">✅</button>
-                    <button class="btn btn-outline btn-sm" onclick="abrirEdicao(${JSON.stringify(ag).replace(/"/g,'&quot;')})">✏️</button>
-                    <button class="btn btn-outline btn-sm" onclick="marcarFalta(${ag.id})">❌</button>
-                    <button class="btn btn-danger btn-sm" onclick="cancelarAgendamento(${ag.id})">🚫</button>
-                    <button class="btn btn-danger btn-sm" onclick="excluirAgendamento(${ag.id})">🗑️</button>
+                    <button class="btn btn-green btn-sm" onclick="abrirBaixa(${ag.id})" title="Realizar sessão">✅ Realizar</button>
+                    <button class="btn btn-outline btn-sm" onclick="abrirEdicao(${JSON.stringify(ag).replace(/"/g,'&quot;')})" title="Editar">✏️</button>
+                    <button class="btn btn-outline btn-sm" onclick="marcarFalta(${ag.id})" title="Falta">❌</button>
+                    <button class="btn btn-danger btn-sm" onclick="cancelarAgendamento(${ag.id})" title="Cancelar">🚫</button>
+                    <button class="btn btn-danger btn-sm" onclick="excluirAgendamento(${ag.id})" title="Excluir">🗑️</button>
                 </div>`
                 : `<div style="display:flex;gap:5px;">
                     <span class="status status-${ag.status}">${ag.status}</span>
@@ -406,6 +474,7 @@ function renderizarAgendamentos(lista) {
                     ${ag.pacientes?.nome||'—'}</a></td>
                 <td>${ag.tipo==='avulso'?'Avulso':ag.pacientes_pacotes?.pacotes_modelo?.nome||'Pacote'}</td>
                 <td>${restStr}</td>
+                <td>${valorStr}</td>
                 <td><span class="status status-${ag.status}">${ag.status}</span></td>
                 <td>${acoes}</td>
             </tr>`;
@@ -415,7 +484,7 @@ function renderizarAgendamentos(lista) {
 }
 
 function limparAg() {
-    ['ag_id','ag_data','ag_horario','ag_obs','ag_valor'].forEach(id => {
+    ['ag_id','ag_data','ag_horario','ag_obs'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value='';
     });

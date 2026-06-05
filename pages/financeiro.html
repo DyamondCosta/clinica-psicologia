@@ -18,6 +18,7 @@
 
     <div class="container">
 
+        <!-- CARDS -->
         <div class="cards-grid">
             <div class="card-stat">
                 <div class="card-stat-label">Entradas do Mês</div>
@@ -37,14 +38,15 @@
             </div>
         </div>
 
+        <!-- LANÇAMENTO MANUAL -->
         <div class="form-section">
             <h2>Lançamento Manual</h2>
             <div class="form-grid">
                 <div class="form-group">
                     <label>Tipo *</label>
                     <select id="fin_tipo">
-                        <option value="ENTRADA">Entrada</option>
-                        <option value="SAIDA">Saída</option>
+                        <option value="ENTRADA">💰 Entrada</option>
+                        <option value="SAIDA">💸 Saída</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -57,7 +59,7 @@
                 </div>
                 <div class="form-group">
                     <label>Valor (R$) *</label>
-                    <input id="fin_valor" type="number" placeholder="Ex: 180.00">
+                    <input id="fin_valor" type="number" placeholder="Ex: 180.00" min="0" step="0.01">
                 </div>
                 <div class="form-group">
                     <label>Paciente (opcional)</label>
@@ -81,6 +83,7 @@
             </div>
         </div>
 
+        <!-- EXTRATO -->
         <div class="table-section">
             <div class="table-header">
                 <h2>Extrato</h2>
@@ -91,7 +94,7 @@
                         <option value="ENTRADA">Entradas</option>
                         <option value="SAIDA">Saídas</option>
                     </select>
-                    <input id="filtro-paciente-fin" placeholder="Buscar paciente..." onkeyup="filtrarExtrato()" style="max-width:200px;">
+                    <input id="filtro-busca" placeholder="Buscar..." onkeyup="filtrarExtrato()" style="max-width:200px;">
                 </div>
             </div>
             <div id="lista-financeiro"></div>
@@ -120,22 +123,23 @@ async function carregarPacientesSelect() {
 }
 
 async function salvarLancamento() {
-    const tipo           = document.getElementById('fin_tipo').value;
-    const data_movimento = document.getElementById('fin_data').value;
-    const descricao      = document.getElementById('fin_descricao').value.trim();
-    const valor          = Number(document.getElementById('fin_valor').value);
-    const paciente_id    = document.getElementById('fin_paciente').value || null;
-    const forma_pagamento= document.getElementById('fin_pagamento').value;
+    const tipo            = document.getElementById('fin_tipo').value;
+    const data_movimento  = document.getElementById('fin_data').value;
+    const descricao       = document.getElementById('fin_descricao').value.trim();
+    const valor           = Number(document.getElementById('fin_valor').value);
+    const paciente_id     = document.getElementById('fin_paciente').value || null;
+    const forma_pagamento = document.getElementById('fin_pagamento').value;
 
-    if (!descricao)          { alert('Informe a descrição.'); return; }
-    if (!valor||valor<=0)    { alert('Informe o valor.'); return; }
-    if (!data_movimento)     { alert('Informe a data.'); return; }
+    if (!descricao)       { alert('Informe a descrição.'); return; }
+    if (!valor||valor<=0) { alert('Informe o valor.'); return; }
+    if (!data_movimento)  { alert('Informe a data.'); return; }
 
     const { error } = await db.from('financeiro').insert([{
         tipo, descricao, valor, paciente_id, forma_pagamento, data_movimento
     }]);
 
-    if (error) { alert('Erro ao salvar.'); return; }
+    if (error) { alert('Erro ao salvar: ' + error.message); return; }
+
     alert('✅ Lançamento salvo!');
     document.getElementById('fin_descricao').value = '';
     document.getElementById('fin_valor').value     = '';
@@ -144,37 +148,54 @@ async function salvarLancamento() {
 }
 
 async function carregarFinanceiro() {
-    const mes  = document.getElementById('filtro-mes').value || mesAtual();
+    const mes = document.getElementById('filtro-mes').value || mesAtual();
     const [ano, m] = mes.split('-');
-    const ini  = `${ano}-${m}-01`;
-    const fim  = `${ano}-${m}-31`;
+    const ini = `${ano}-${m}-01`;
 
-    const { data } = await db.from('financeiro')
+    // Último dia do mês corretamente
+    const ultimoDia = new Date(Number(ano), Number(m), 0).getDate();
+    const fim = `${ano}-${m}-${String(ultimoDia).padStart(2,'0')}`;
+
+    const { data, error } = await db.from('financeiro')
         .select('*, pacientes(nome)')
         .gte('data_movimento', ini)
         .lte('data_movimento', fim)
-        .order('data_movimento', { ascending: false });
+        .order('data_movimento', { ascending: false })
+        .order('id', { ascending: false });
+
+    if (error) { console.error(error); return; }
 
     registrosCarregados = data||[];
 
-    const entradas = registrosCarregados.filter(r=>r.tipo==='ENTRADA').reduce((s,r)=>s+Number(r.valor),0);
-    const saidas   = registrosCarregados.filter(r=>r.tipo==='SAIDA').reduce((s,r)=>s+Number(r.valor),0);
-    const saldo    = entradas - saidas;
+    // Calcula totais
+    const entradas = registrosCarregados
+        .filter(r => r.tipo==='ENTRADA')
+        .reduce((s,r) => s + Number(r.valor), 0);
 
-    document.getElementById('total-entradas').textContent  = 'R$ '+entradas.toFixed(2).replace('.',',');
-    document.getElementById('total-saidas').textContent    = 'R$ '+saidas.toFixed(2).replace('.',',');
-    document.getElementById('saldo-mes').textContent       = 'R$ '+saldo.toFixed(2).replace('.',',');
-    document.getElementById('num-transacoes').textContent  = registrosCarregados.length;
+    const saidas = registrosCarregados
+        .filter(r => r.tipo==='SAIDA')
+        .reduce((s,r) => s + Number(r.valor), 0);
+
+    const saldo = entradas - saidas;
+
+    document.getElementById('total-entradas').textContent = 'R$ ' + entradas.toFixed(2).replace('.',',');
+    document.getElementById('total-saidas').textContent   = 'R$ ' + saidas.toFixed(2).replace('.',',');
+    document.getElementById('saldo-mes').textContent      = 'R$ ' + saldo.toFixed(2).replace('.',',');
+    document.getElementById('num-transacoes').textContent = registrosCarregados.length;
 
     filtrarExtrato();
 }
 
 function filtrarExtrato() {
-    const tipo    = document.getElementById('filtro-tipo').value;
-    const texto   = document.getElementById('filtro-paciente-fin').value.toLowerCase();
-    let lista = registrosCarregados;
+    const tipo  = document.getElementById('filtro-tipo').value;
+    const texto = document.getElementById('filtro-busca').value.toLowerCase();
+    let lista   = registrosCarregados;
     if (tipo)  lista = lista.filter(r => r.tipo===tipo);
-    if (texto) lista = lista.filter(r => (r.pacientes?.nome||'').toLowerCase().includes(texto) || r.descricao.toLowerCase().includes(texto));
+    if (texto) lista = lista.filter(r =>
+        (r.pacientes?.nome||'').toLowerCase().includes(texto) ||
+        (r.descricao||'').toLowerCase().includes(texto) ||
+        (r.forma_pagamento||'').toLowerCase().includes(texto)
+    );
     renderizarExtrato(lista);
 }
 
@@ -184,35 +205,74 @@ function renderizarExtrato(lista) {
         div.innerHTML = '<div class="empty-state"><div class="empty-icon">◈</div><p>Nenhum lançamento neste período.</p></div>';
         return;
     }
-    div.innerHTML = `<table>
-        <thead><tr>
-            <th>Data</th><th>Descrição</th><th>Paciente</th><th>Forma</th><th>Valor</th><th>Ações</th>
-        </tr></thead>
-        <tbody>
-        ${lista.map(r => `<tr>
-            <td>${r.data_movimento?r.data_movimento.split('-').reverse().join('/'):'—'}</td>
-            <td>${r.descricao}</td>
-            <td style="color:var(--text-muted);">${r.pacientes?.nome||'—'}</td>
-            <td style="color:var(--text-muted);font-size:12px;">${r.forma_pagamento||'—'}</td>
-            <td style="font-weight:600;color:${r.tipo==='ENTRADA'?'#2d7a4f':'#b84040'};">
-                ${r.tipo==='ENTRADA'?'+':'-'} R$ ${Number(r.valor).toFixed(2)}
-            </td>
-            <td>
-                <button class="btn btn-danger btn-sm" onclick="excluirLancamento(${r.id})">🗑️</button>
-            </td>
-        </tr>`).join('')}
-        </tbody>
-    </table>`;
+
+    // Totais filtrados
+    const entradas = lista.filter(r=>r.tipo==='ENTRADA').reduce((s,r)=>s+Number(r.valor),0);
+    const saidas   = lista.filter(r=>r.tipo==='SAIDA').reduce((s,r)=>s+Number(r.valor),0);
+
+    div.innerHTML = `
+        <table>
+            <thead><tr>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Paciente</th>
+                <th>Forma</th>
+                <th>Valor</th>
+                <th>Ações</th>
+            </tr></thead>
+            <tbody>
+            ${lista.map(r => `<tr>
+                <td>${r.data_movimento?r.data_movimento.split('-').reverse().join('/'):'—'}</td>
+                <td>
+                    <div style="font-weight:500;">${r.descricao}</div>
+                    ${r.observacoes?`<div style="font-size:11px;color:var(--text-muted);">${r.observacoes}</div>`:''}
+                </td>
+                <td style="color:var(--text-muted);">${r.pacientes?.nome||'—'}</td>
+                <td>
+                    <span style="font-size:12px;padding:3px 8px;border-radius:20px;
+                        background:rgba(201,168,76,0.1);color:var(--gold);">
+                        ${r.forma_pagamento||'—'}
+                    </span>
+                </td>
+                <td>
+                    <span style="font-weight:700;font-size:15px;color:${r.tipo==='ENTRADA'?'#4daa70':'#e07070'};">
+                        ${r.tipo==='ENTRADA'?'+ ':'- '}R$ ${Number(r.valor).toFixed(2).replace('.',',')}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn btn-danger btn-sm" onclick="excluirLancamento(${r.id})">🗑️ Excluir</button>
+                </td>
+            </tr>`).join('')}
+            </tbody>
+            <tfoot>
+                <tr style="border-top:2px solid var(--border);">
+                    <td colspan="4" style="padding:14px 20px;font-weight:600;color:var(--text-muted);font-size:12px;letter-spacing:1px;text-transform:uppercase;">
+                        Total do período filtrado
+                    </td>
+                    <td style="padding:14px 20px;">
+                        <div style="font-size:13px;color:#4daa70;font-weight:600;">+ R$ ${entradas.toFixed(2).replace('.',',')}</div>
+                        <div style="font-size:13px;color:#e07070;font-weight:600;">- R$ ${saidas.toFixed(2).replace('.',',')}</div>
+                        <div style="font-size:14px;color:var(--gold);font-weight:700;margin-top:4px;border-top:1px solid var(--border);padding-top:4px;">
+                            = R$ ${(entradas-saidas).toFixed(2).replace('.',',')}
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>`;
 }
 
 async function excluirLancamento(id) {
-    if (!confirm('Excluir este lançamento?')) return;
-    await db.from('financeiro').delete().eq('id', id);
+    if (!confirm('Excluir este lançamento? Esta ação não pode ser desfeita.')) return;
+    const { error } = await db.from('financeiro').delete().eq('id', id);
+    if (error) { alert('Erro ao excluir.'); return; }
+    alert('✅ Lançamento excluído!');
     carregarFinanceiro();
 }
 
-document.getElementById('fin_data').value    = hojeStr();
-document.getElementById('filtro-mes').value  = mesAtual();
+// Init
+document.getElementById('fin_data').value   = hojeStr();
+document.getElementById('filtro-mes').value = mesAtual();
 carregarPacientesSelect();
 carregarFinanceiro();
 </script>
