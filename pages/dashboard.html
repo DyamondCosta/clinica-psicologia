@@ -22,32 +22,39 @@
         <div id="alertas-container"></div>
 
         <!-- CARDS -->
-        <div class="cards-grid">
-            <div class="card-stat">
-                <div class="card-stat-label">Pacientes Ativos</div>
-                <div class="card-stat-value gold" id="total-pacientes">—</div>
-            </div>
-            <div class="card-stat">
-                <div class="card-stat-label">Sessões Hoje</div>
-                <div class="card-stat-value" id="sessoes-hoje">—</div>
-            </div>
-            <div class="card-stat">
-                <div class="card-stat-label">Sessões esta Semana</div>
-                <div class="card-stat-value" id="sessoes-semana">—</div>
-            </div>
-            <div class="card-stat">
-                <div class="card-stat-label">Faturamento do Mês</div>
-                <div class="card-stat-value green" id="fat-mes">—</div>
-            </div>
-            <div class="card-stat">
-                <div class="card-stat-label">Pacotes Ativos</div>
-                <div class="card-stat-value gold" id="pacotes-ativos">—</div>
-            </div>
-            <div class="card-stat">
-                <div class="card-stat-label">Alertas Ativos</div>
-                <div class="card-stat-value red" id="total-alertas">—</div>
-            </div>
-        </div>
+        <!-- CARDS -->
+<div class="cards-grid">
+    <a href="pacientes.html" class="card-stat" style="text-decoration:none;cursor:pointer;">
+        <div class="card-stat-label">Pacientes Ativos</div>
+        <div class="card-stat-value gold" id="total-pacientes">—</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Ver pacientes →</div>
+    </a>
+    <a href="agendamentos.html" class="card-stat" style="text-decoration:none;cursor:pointer;">
+        <div class="card-stat-label">Sessões Hoje</div>
+        <div class="card-stat-value" id="sessoes-hoje">—</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Ver agenda →</div>
+    </a>
+    <a href="agendamentos.html" class="card-stat" style="text-decoration:none;cursor:pointer;">
+        <div class="card-stat-label">Sessões esta Semana</div>
+        <div class="card-stat-value" id="sessoes-semana">—</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Ver agenda →</div>
+    </a>
+    <a href="financeiro.html" class="card-stat" style="text-decoration:none;cursor:pointer;">
+        <div class="card-stat-label">Faturamento do Mês</div>
+        <div class="card-stat-value green" id="fat-mes">—</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Ver financeiro →</div>
+    </a>
+    <a href="pacotes.html" class="card-stat" style="text-decoration:none;cursor:pointer;">
+        <div class="card-stat-label">Pacotes Ativos</div>
+        <div class="card-stat-value gold" id="pacotes-ativos">—</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Ver pacotes →</div>
+    </a>
+    <a href="#alertas-container" class="card-stat" style="text-decoration:none;cursor:pointer;">
+        <div class="card-stat-label">Alertas Ativos</div>
+        <div class="card-stat-value red" id="total-alertas">—</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Ver alertas →</div>
+    </a>
+</div>
 
         <!-- AGENDA DO DIA -->
         <div class="form-section">
