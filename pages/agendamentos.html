@@ -13,7 +13,7 @@
 <div class="main">
     <div class="header">
         <h1>◷ <span class="header-gold">Agendamentos</span></h1>
-        <p>Agenda de sessões e atendimentos</p>
+        <p>Agenda completa de sessões</p>
     </div>
 
     <div class="container">
@@ -78,13 +78,20 @@
             </div>
         </div>
 
+        <!-- FILTROS -->
         <div class="table-section">
             <div class="table-header">
                 <h2>Agenda</h2>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <select id="filtro-periodo" onchange="carregarAgendamentos()" style="max-width:160px;">
+                        <option value="todos">Todos</option>
+                        <option value="hoje">Hoje</option>
+                        <option value="semana">Esta semana</option>
+                        <option value="mes">Este mês</option>
+                    </select>
                     <input id="filtro-data" type="date" onchange="carregarAgendamentos()" style="max-width:160px;">
                     <select id="filtro-status" onchange="filtrarLista()" style="max-width:150px;">
-                        <option value="">Todos</option>
+                        <option value="">Todos status</option>
                         <option value="agendado">Agendados</option>
                         <option value="realizado">Realizados</option>
                         <option value="cancelado">Cancelados</option>
@@ -99,6 +106,34 @@
     </div>
 </div>
 
+<!-- MODAL EDITAR -->
+<div class="modal-overlay" id="modal-editar">
+    <div class="modal">
+        <h2>✏️ Editar Agendamento</h2>
+        <input type="hidden" id="edit_id">
+        <div class="form-group" style="margin-bottom:14px;">
+            <label>Data</label>
+            <input id="edit_data" type="date">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+            <label>Horário</label>
+            <input id="edit_horario" type="time">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+            <label>Duração (minutos)</label>
+            <input id="edit_duracao" type="number" min="10" max="180">
+        </div>
+        <div class="form-group" style="margin-bottom:20px;">
+            <label>Observações</label>
+            <textarea id="edit_obs"></textarea>
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="salvarEdicao()">💾 Salvar</button>
+            <button class="btn btn-outline" onclick="fecharModal()">Cancelar</button>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../js/config.js"></script>
 <script src="../js/auth.js"></script>
@@ -109,16 +144,23 @@ let agendamentosCarregados = [];
 
 function hojeStr() { return new Date().toISOString().split('T')[0]; }
 
+function diasAte(dataStr) {
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const data = new Date(dataStr + 'T00:00:00');
+    return Math.round((data - hoje) / (1000*60*60*24));
+}
+
 function alternarTipo() {
     const tipo = document.getElementById('ag_tipo').value;
-    document.getElementById('campo-pacote').style.display = tipo==='pacote' ? 'flex' : 'none';
-    document.getElementById('campo-valor-avulso').style.display = tipo==='avulso' ? 'flex' : 'none';
-    document.getElementById('campo-pagamento-avulso').style.display = tipo==='avulso' ? 'flex' : 'none';
+    document.getElementById('campo-pacote').style.display = tipo==='pacote'?'flex':'none';
+    document.getElementById('campo-valor-avulso').style.display = tipo==='avulso'?'flex':'none';
+    document.getElementById('campo-pagamento-avulso').style.display = tipo==='avulso'?'flex':'none';
 }
 
 async function carregarPacientesSelect() {
     const { data } = await db.from('pacientes').select('id,nome').eq('ativo',true).order('nome');
     const sel = document.getElementById('ag_paciente');
+    sel.innerHTML = '<option value="">Selecione o paciente</option>';
     (data||[]).forEach(p => {
         sel.innerHTML += `<option value="${p.id}">${p.nome}</option>`;
     });
@@ -132,6 +174,10 @@ async function carregarPacotesDoSelect() {
     const { data } = await db.from('pacientes_pacotes')
         .select('id,total_sessoes,sessoes_restantes,pacotes_modelo(nome)')
         .eq('paciente_id', pacienteId).eq('status','ativo');
+    if (!data||!data.length) {
+        sel.innerHTML = '<option value="">Nenhum pacote ativo</option>';
+        return;
+    }
     (data||[]).forEach(pk => {
         sel.innerHTML += `<option value="${pk.id}">
             ${pk.pacotes_modelo?.nome||'Pacote'} — ${pk.sessoes_restantes} sessões restantes
@@ -155,7 +201,17 @@ async function salvarAgendamento() {
     if (!pacienteId) { alert('Selecione um paciente.'); return; }
     if (!data_sessao) { alert('Informe a data da sessão.'); return; }
     if (!horario)     { alert('Informe o horário.'); return; }
-    if (tipo==='pacote' && !pacoteId) { alert('Selecione um pacote.'); return; }
+    if (tipo==='pacote' && !pacoteId) { alert('Selecione um pacote ativo.'); return; }
+
+    // Verifica se o pacote tem sessões
+    if (tipo==='pacote' && pacoteId) {
+        const { data: pk } = await db.from('pacientes_pacotes')
+            .select('sessoes_restantes').eq('id', pacoteId).single();
+        if (pk && pk.sessoes_restantes <= 0) {
+            alert('Este pacote não tem sessões disponíveis! Renove o pacote primeiro.');
+            return;
+        }
+    }
 
     const payload = {
         paciente_id: pacienteId,
@@ -171,7 +227,7 @@ async function salvarAgendamento() {
 
     if (id) {
         await db.from('agendamentos').update(payload).eq('id', id);
-        alert('Agendamento atualizado!');
+        alert('✅ Agendamento atualizado!');
     } else {
         await db.from('agendamentos').insert([payload]);
         alert('✅ Agendamento salvo!');
@@ -182,27 +238,27 @@ async function salvarAgendamento() {
 
 async function darBaixa(id) {
     if (!confirm('Confirmar realização desta sessão? Isso irá descontar do pacote.')) return;
-    const { data: ag } = await db.from('agendamentos').select('*').eq('id', id).single();
+    const { data: ag } = await db.from('agendamentos').select('*').eq('id',id).single();
     if (!ag) return;
 
-    await db.from('agendamentos').update({ status: 'realizado' }).eq('id', id);
+    await db.from('agendamentos').update({ status:'realizado' }).eq('id',id);
 
     if (ag.tipo==='pacote' && ag.pacote_paciente_id) {
         const { data: pk } = await db.from('pacientes_pacotes')
-            .select('*').eq('id', ag.pacote_paciente_id).single();
+            .select('*').eq('id',ag.pacote_paciente_id).single();
         if (pk) {
-            const novoRealizadas = (pk.sessoes_realizadas||0) + 1;
-            const novoRestantes  = Math.max(0,(pk.sessoes_restantes||0) - 1);
+            const novoReal = (pk.sessoes_realizadas||0) + 1;
+            const novoRest = Math.max(0,(pk.sessoes_restantes||0) - 1);
             await db.from('pacientes_pacotes').update({
-                sessoes_realizadas: novoRealizadas,
-                sessoes_restantes: novoRestantes,
-                status: novoRestantes===0 ? 'concluido' : 'ativo'
+                sessoes_realizadas: novoReal,
+                sessoes_restantes: novoRest,
+                status: novoRest===0 ? 'concluido' : 'ativo'
             }).eq('id', ag.pacote_paciente_id);
         }
     }
 
     if (ag.tipo==='avulso' && ag.valor_cobrado) {
-        const { data: pac } = await db.from('pacientes').select('nome').eq('id', ag.paciente_id).single();
+        const { data: pac } = await db.from('pacientes').select('nome').eq('id',ag.paciente_id).single();
         await db.from('financeiro').insert([{
             paciente_id: ag.paciente_id,
             agendamento_id: id,
@@ -220,25 +276,76 @@ async function darBaixa(id) {
 
 async function marcarFalta(id) {
     if (!confirm('Marcar falta para este paciente?')) return;
-    await db.from('agendamentos').update({ status: 'faltou' }).eq('id', id);
+    await db.from('agendamentos').update({ status:'faltou' }).eq('id',id);
     carregarAgendamentos();
 }
 
 async function cancelarAgendamento(id) {
     if (!confirm('Cancelar este agendamento?')) return;
-    await db.from('agendamentos').update({ status: 'cancelado' }).eq('id', id);
+    await db.from('agendamentos').update({ status:'cancelado' }).eq('id',id);
     carregarAgendamentos();
 }
 
+async function excluirAgendamento(id) {
+    if (!confirm('EXCLUIR permanentemente este agendamento?')) return;
+    await db.from('agendamentos').delete().eq('id',id);
+    carregarAgendamentos();
+}
+
+function abrirEdicao(ag) {
+    document.getElementById('edit_id').value = ag.id;
+    document.getElementById('edit_data').value = ag.data_sessao||'';
+    document.getElementById('edit_horario').value = ag.horario||'';
+    document.getElementById('edit_duracao').value = ag.duracao_minutos||50;
+    document.getElementById('edit_obs').value = ag.observacoes||'';
+    document.getElementById('modal-editar').classList.add('open');
+}
+
+async function salvarEdicao() {
+    const id = document.getElementById('edit_id').value;
+    const data_sessao = document.getElementById('edit_data').value;
+    const horario = document.getElementById('edit_horario').value;
+    const duracao = document.getElementById('edit_duracao').value;
+    const obs = document.getElementById('edit_obs').value;
+
+    if (!data_sessao||!horario) { alert('Preencha data e horário.'); return; }
+
+    await db.from('agendamentos').update({
+        data_sessao, horario, duracao_minutos: duracao, observacoes: obs
+    }).eq('id', id);
+
+    alert('✅ Agendamento atualizado!');
+    fecharModal();
+    carregarAgendamentos();
+}
+
+function fecharModal() {
+    document.getElementById('modal-editar').classList.remove('open');
+}
+
 async function carregarAgendamentos() {
+    const periodo = document.getElementById('filtro-periodo').value;
     const filtroData = document.getElementById('filtro-data').value;
+    const hoje = hojeStr();
+
     let query = db.from('agendamentos')
         .select('*, pacientes(nome), pacientes_pacotes(sessoes_restantes, pacotes_modelo(nome))')
         .order('data_sessao', { ascending: false })
         .order('horario');
-    if (filtroData) query = query.eq('data_sessao', filtroData);
+
+    if (filtroData) {
+        query = query.eq('data_sessao', filtroData);
+    } else if (periodo === 'hoje') {
+        query = query.eq('data_sessao', hoje);
+    } else if (periodo === 'semana') {
+        const fim = new Date(); fim.setDate(fim.getDate()+7);
+        query = query.gte('data_sessao', hoje).lte('data_sessao', fim.toISOString().split('T')[0]);
+    } else if (periodo === 'mes') {
+        query = query.gte('data_sessao', hoje.slice(0,7)+'-01').lte('data_sessao', hoje.slice(0,7)+'-31');
+    }
+
     const { data } = await query;
-    agendamentosCarregados = data || [];
+    agendamentosCarregados = data||[];
     filtrarLista();
 }
 
@@ -247,7 +354,7 @@ function filtrarLista() {
     const status = document.getElementById('filtro-status').value;
     let lista = agendamentosCarregados;
     if (texto)  lista = lista.filter(ag => (ag.pacientes?.nome||'').toLowerCase().includes(texto));
-    if (status) lista = lista.filter(ag => ag.status === status);
+    if (status) lista = lista.filter(ag => ag.status===status);
     renderizarAgendamentos(lista);
 }
 
@@ -263,30 +370,43 @@ function renderizarAgendamentos(lista) {
         </tr></thead>
         <tbody>
         ${lista.map(ag => {
-            const data    = ag.data_sessao ? ag.data_sessao.split('-').reverse().join('/') : '—';
-            const horario = ag.horario ? ag.horario.slice(0,5) : '—';
-            const rest    = ag.pacientes_pacotes?.sessoes_restantes;
+            const data = ag.data_sessao?ag.data_sessao.split('-').reverse().join('/'):'—';
+            const dias = diasAte(ag.data_sessao);
+            const horario = ag.horario?ag.horario.slice(0,5):'—';
+            const rest = ag.pacientes_pacotes?.sessoes_restantes;
             const restStr = ag.tipo==='pacote' && rest!==undefined
                 ? `<span class="sessoes-badge ${rest<=1?'critico':rest<=2?'alerta':'ok'}">${rest}</span>`
                 : '<span style="color:var(--text-muted)">Avulso</span>';
+
+            let dataLabel = data;
+            if (ag.status==='agendado') {
+                if (dias===0) dataLabel += ' <span style="color:#e07070;font-size:11px;">HOJE</span>';
+                else if (dias===1) dataLabel += ' <span style="color:#E8C97A;font-size:11px;">AMANHÃ</span>';
+                else if (dias>0 && dias<=7) dataLabel += ` <span style="color:#9A9080;font-size:11px;">${dias}d</span>`;
+            }
+
             const acoes = ag.status==='agendado' ? `
-                <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                    <button class="btn btn-green btn-sm" onclick="darBaixa(${ag.id})">✅ Realizar</button>
-                    <button class="btn btn-outline btn-sm" onclick="marcarFalta(${ag.id})">❌ Falta</button>
+                <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                    <button class="btn btn-green btn-sm" onclick="darBaixa(${ag.id})">✅</button>
+                    <button class="btn btn-outline btn-sm" onclick="abrirEdicao(${JSON.stringify(ag).replace(/"/g,'&quot;')})">✏️</button>
+                    <button class="btn btn-outline btn-sm" onclick="marcarFalta(${ag.id})">❌</button>
                     <button class="btn btn-danger btn-sm" onclick="cancelarAgendamento(${ag.id})">🚫</button>
+                    <button class="btn btn-danger btn-sm" onclick="excluirAgendamento(${ag.id})">🗑️</button>
                 </div>`
-                : `<span class="status status-${ag.status}">${ag.status}</span>`;
+                : `<div style="display:flex;gap:5px;">
+                    <span class="status status-${ag.status}">${ag.status}</span>
+                    <button class="btn btn-danger btn-sm" onclick="excluirAgendamento(${ag.id})">🗑️</button>
+                </div>`;
+
             return `<tr>
-                <td>${data}</td>
+                <td>${dataLabel}</td>
                 <td><strong>${horario}</strong></td>
-                <td>
-                    <a href="prontuario.html?id=${ag.paciente_id}"
-                       style="color:var(--gold-dark);text-decoration:none;font-weight:500;">
-                        ${ag.pacientes?.nome||'—'}
-                    </a>
-                </td>
+                <td><a href="prontuario.html?id=${ag.paciente_id}"
+                    style="color:var(--gold);text-decoration:none;font-weight:500;">
+                    ${ag.pacientes?.nome||'—'}</a></td>
                 <td>${ag.tipo==='avulso'?'Avulso':ag.pacientes_pacotes?.pacotes_modelo?.nome||'Pacote'}</td>
                 <td>${restStr}</td>
+                <td><span class="status status-${ag.status}">${ag.status}</span></td>
                 <td>${acoes}</td>
             </tr>`;
         }).join('')}
@@ -297,15 +417,14 @@ function renderizarAgendamentos(lista) {
 function limparAg() {
     ['ag_id','ag_data','ag_horario','ag_obs','ag_valor'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.value = '';
+        if (el) el.value='';
     });
-    document.getElementById('ag_paciente').value = '';
-    document.getElementById('ag_tipo').value = 'pacote';
-    document.getElementById('ag_duracao').value = 50;
+    document.getElementById('ag_paciente').value='';
+    document.getElementById('ag_tipo').value='pacote';
+    document.getElementById('ag_duracao').value=50;
     alternarTipo();
 }
 
-document.getElementById('filtro-data').value = hojeStr();
 carregarPacientesSelect();
 carregarAgendamentos();
 </script>

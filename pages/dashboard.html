@@ -18,10 +18,10 @@
 
     <div class="container">
 
-        <!-- ALERTAS DE SESSÕES ACABANDO -->
-        <div id="alertas-sessoes"></div>
+        <!-- ALERTAS INTELIGENTES -->
+        <div id="alertas-container"></div>
 
-        <!-- CARDS ESTATÍSTICAS -->
+        <!-- CARDS -->
         <div class="cards-grid">
             <div class="card-stat">
                 <div class="card-stat-label">Pacientes Ativos</div>
@@ -44,24 +44,32 @@
                 <div class="card-stat-value gold" id="pacotes-ativos">—</div>
             </div>
             <div class="card-stat">
-                <div class="card-stat-label">Sessões c/ Alerta</div>
-                <div class="card-stat-value red" id="sessoes-alerta">—</div>
+                <div class="card-stat-label">Alertas Ativos</div>
+                <div class="card-stat-value red" id="total-alertas">—</div>
             </div>
         </div>
 
         <!-- AGENDA DO DIA -->
         <div class="form-section">
-            <h2>Agenda de Hoje</h2>
+            <h2>📅 Agenda de Hoje</h2>
             <div id="agenda-hoje"></div>
         </div>
 
-        <!-- PRÓXIMOS AGENDAMENTOS -->
+        <!-- PRÓXIMAS SESSÕES -->
         <div class="table-section">
             <div class="table-header">
-                <h2>Próximos Agendamentos</h2>
+                <h2>Próximas Sessões</h2>
                 <a href="agendamentos.html" class="btn btn-outline btn-sm">Ver todos</a>
             </div>
-            <div id="proximos"></div>
+            <div id="proximas-sessoes"></div>
+        </div>
+
+        <!-- PACIENTES COM POUCAS SESSÕES -->
+        <div class="table-section">
+            <div class="table-header">
+                <h2>⚠️ Pacientes com Sessões Acabando</h2>
+            </div>
+            <div id="sessoes-acabando"></div>
         </div>
 
     </div>
@@ -76,6 +84,12 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 function hojeStr() { return new Date().toISOString().split('T')[0]; }
 
+function diasAte(dataStr) {
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const data = new Date(dataStr + 'T00:00:00');
+    return Math.round((data - hoje) / (1000*60*60*24));
+}
+
 function semanaAtual() {
     const hoje = new Date();
     const dom = new Date(hoje); dom.setDate(hoje.getDate() - hoje.getDay());
@@ -88,7 +102,6 @@ async function carregarDashboard() {
     const [ini, fim] = semanaAtual();
     const mes = hoje.slice(0,7);
 
-    // Data formatada
     const d = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
     document.getElementById('data-hoje').textContent = d.charAt(0).toUpperCase() + d.slice(1);
 
@@ -120,84 +133,235 @@ async function carregarDashboard() {
         .select('*',{count:'exact',head:true}).eq('status','ativo');
     document.getElementById('pacotes-ativos').textContent = pacAtivos || 0;
 
-    // Alertas de sessões acabando (≤ 2)
-    const { data: alertas } = await db.from('pacientes_pacotes')
+    // ALERTAS INTELIGENTES
+    const amanha = new Date(); amanha.setDate(amanha.getDate()+1);
+    const amanhaStr = amanha.toISOString().split('T')[0];
+    const seteDias = new Date(); seteDias.setDate(seteDias.getDate()+7);
+    const seteDiasStr = seteDias.toISOString().split('T')[0];
+
+    const { data: proximasAg } = await db.from('agendamentos')
+        .select('*, pacientes(nome)')
+        .eq('status','agendado')
+        .gte('data_sessao', hoje)
+        .lte('data_sessao', seteDiasStr)
+        .order('data_sessao').order('horario');
+
+    const { data: alertasPacotes } = await db.from('pacientes_pacotes')
         .select('*, pacientes(nome)')
         .eq('status','ativo')
         .lte('sessoes_restantes', 2);
 
-    document.getElementById('sessoes-alerta').textContent = (alertas||[]).length;
-
-    // Renderiza alertas
-    const alertasDiv = document.getElementById('alertas-sessoes');
+    const alertasDiv = document.getElementById('alertas-container');
     alertasDiv.innerHTML = '';
-    (alertas||[]).forEach(a => {
+    let totalAlertas = 0;
+
+    (proximasAg||[]).forEach(ag => {
+        const dias = diasAte(ag.data_sessao);
+        let tipo = '', icone = '', titulo = '', desc = '';
+
+        if (dias === 0) {
+            tipo = 'alerta-critico'; icone = '🔴';
+            titulo = `Sessão HOJE — ${ag.pacientes?.nome}`;
+            desc = `Às ${ag.horario?.slice(0,5)} · Não esqueça de registrar a sessão!`;
+            totalAlertas++;
+        } else if (dias === 1) {
+            tipo = ''; icone = '🟠';
+            titulo = `Sessão AMANHÃ — ${ag.pacientes?.nome}`;
+            desc = `${amanhaStr.split('-').reverse().join('/')} às ${ag.horario?.slice(0,5)}`;
+            totalAlertas++;
+        } else if (dias <= 7) {
+            tipo = ''; icone = '🟡';
+            titulo = `Sessão em ${dias} dias — ${ag.pacientes?.nome}`;
+            desc = `${ag.data_sessao.split('-').reverse().join('/')} às ${ag.horario?.slice(0,5)}`;
+            totalAlertas++;
+        }
+
+        if (titulo) {
+            alertasDiv.innerHTML += `
+            <div class="alerta-banner ${tipo}">
+                <div class="alerta-icon">${icone}</div>
+                <div class="alerta-texto">
+                    <div class="alerta-titulo">${titulo}</div>
+                    <div class="alerta-desc">${desc}</div>
+                </div>
+                <a href="agendamentos.html" class="btn btn-outline btn-sm">Ver Agenda</a>
+            </div>`;
+        }
+    });
+
+    (alertasPacotes||[]).forEach(a => {
         const critico = a.sessoes_restantes === 0;
+        totalAlertas++;
         alertasDiv.innerHTML += `
-        <div class="alerta-banner ${critico ? 'alerta-critico' : ''}">
-            <div class="alerta-icon">${critico ? '🚨' : '⚠️'}</div>
+        <div class="alerta-banner ${critico?'alerta-critico':''}">
+            <div class="alerta-icon">${critico?'🚨':'⚠️'}</div>
             <div class="alerta-texto">
                 <div class="alerta-titulo">
-                    ${critico ? 'Sessões esgotadas' : 'Sessões acabando'} — ${a.pacientes?.nome || '—'}
+                    ${critico?'Sessões esgotadas':'Sessões acabando'} — ${a.pacientes?.nome}
                 </div>
                 <div class="alerta-desc">
                     ${critico
-                        ? 'Este paciente não possui mais sessões disponíveis. Ofereça um novo pacote.'
-                        : `Restam apenas <strong>${a.sessoes_restantes}</strong> sessão(ões). Considere renovar o pacote.`}
+                        ? 'Paciente sem sessões disponíveis. Renove o pacote!'
+                        : `Apenas <strong>${a.sessoes_restantes}</strong> sessão(ões) restante(s).`}
                 </div>
             </div>
             <a href="pacientes.html" class="btn btn-outline btn-sm">Ver Paciente</a>
         </div>`;
     });
 
-    // Agenda de hoje
+    if (alertasDiv.innerHTML === '') {
+        alertasDiv.innerHTML = `
+        <div class="alerta-banner" style="border-left-color:#4daa70;background:rgba(77,170,112,0.08);">
+            <div class="alerta-icon">✅</div>
+            <div class="alerta-texto">
+                <div class="alerta-titulo" style="color:#4daa70;">Tudo em ordem!</div>
+                <div class="alerta-desc">Nenhum alerta no momento.</div>
+            </div>
+        </div>`;
+    }
+
+    document.getElementById('total-alertas').textContent = totalAlertas;
+
+    // AGENDA DO DIA
     const { data: agHoje } = await db.from('agendamentos')
-        .select('*, pacientes(nome)')
+        .select('*, pacientes(nome), pacientes_pacotes(sessoes_restantes, pacotes_modelo(nome))')
         .eq('data_sessao', hoje)
         .neq('status','cancelado')
         .order('horario');
 
     const agDiv = document.getElementById('agenda-hoje');
-    if (!agHoje || !agHoje.length) {
-        agDiv.innerHTML = '<div class="empty-state"><div class="empty-icon">◷</div><p>Nenhum atendimento agendado para hoje.</p></div>';
+    if (!agHoje||!agHoje.length) {
+        agDiv.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><p>Nenhum atendimento hoje.</p></div>';
     } else {
         agDiv.innerHTML = agHoje.map(ag => `
             <div class="horario-item">
                 <div class="horario-time">${ag.horario?.slice(0,5)}</div>
                 <div class="horario-info">
-                    <div class="horario-nome">${ag.pacientes?.nome || '—'}</div>
-                    <div class="horario-detalhe">${ag.tipo === 'avulso' ? 'Sessão Avulsa' : 'Pacote'} · ${ag.duracao_minutos||50} min</div>
+                    <div class="horario-nome">${ag.pacientes?.nome||'—'}</div>
+                    <div class="horario-detalhe">
+                        ${ag.tipo==='avulso'?'Avulso':ag.pacientes_pacotes?.pacotes_modelo?.nome||'Pacote'}
+                        · ${ag.duracao_minutos||50} min
+                        ${ag.pacientes_pacotes?.sessoes_restantes !== undefined
+                            ? `· <span style="color:${ag.pacientes_pacotes.sessoes_restantes<=2?'#e07070':'#4daa70'}">
+                                ${ag.pacientes_pacotes.sessoes_restantes} sessões restantes</span>`
+                            : ''}
+                    </div>
                 </div>
-                <span class="status status-${ag.status}">${ag.status}</span>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <span class="status status-${ag.status}">${ag.status}</span>
+                    ${ag.status==='agendado' ? `
+                        <button class="btn btn-green btn-sm" onclick="darBaixaDash(${ag.id})">✅ Realizar</button>
+                        <button class="btn btn-danger btn-sm" onclick="cancelarDash(${ag.id})">🚫</button>
+                    ` : ''}
+                </div>
             </div>`).join('');
     }
 
-    // Próximos agendamentos
-    const { data: proximos } = await db.from('agendamentos')
+    // PRÓXIMAS SESSÕES
+    const { data: proximas } = await db.from('agendamentos')
         .select('*, pacientes(nome)')
         .gt('data_sessao', hoje)
         .eq('status','agendado')
-        .order('data_sessao')
-        .order('horario')
-        .limit(8);
+        .order('data_sessao').order('horario')
+        .limit(10);
 
-    const proxDiv = document.getElementById('proximos');
-    if (!proximos || !proximos.length) {
-        proxDiv.innerHTML = '<div class="empty-state"><p>Nenhum agendamento futuro.</p></div>';
+    const proxDiv = document.getElementById('proximas-sessoes');
+    if (!proximas||!proximas.length) {
+        proxDiv.innerHTML = '<div class="empty-state"><p>Nenhuma sessão futura agendada.</p></div>';
     } else {
         proxDiv.innerHTML = `<table>
-            <thead><tr><th>Data</th><th>Horário</th><th>Paciente</th><th>Tipo</th><th>Status</th></tr></thead>
+            <thead><tr>
+                <th>Data</th><th>Dias</th><th>Horário</th><th>Paciente</th><th>Tipo</th><th>Ações</th>
+            </tr></thead>
             <tbody>
-            ${proximos.map(ag => `<tr>
-                <td>${ag.data_sessao.split('-').reverse().join('/')}</td>
-                <td><strong>${ag.horario?.slice(0,5)}</strong></td>
-                <td>${ag.pacientes?.nome || '—'}</td>
-                <td>${ag.tipo === 'avulso' ? 'Avulso' : 'Pacote'}</td>
-                <td><span class="status status-${ag.status}">${ag.status}</span></td>
+            ${proximas.map(ag => {
+                const dias = diasAte(ag.data_sessao);
+                const corDias = dias===1?'#e07070':dias<=3?'#E8C97A':'#4daa70';
+                return `<tr>
+                    <td>${ag.data_sessao.split('-').reverse().join('/')}</td>
+                    <td><span style="color:${corDias};font-weight:600;">
+                        ${dias===1?'Amanhã':dias+' dias'}
+                    </span></td>
+                    <td><strong>${ag.horario?.slice(0,5)}</strong></td>
+                    <td><a href="prontuario.html?id=${ag.paciente_id}"
+                        style="color:var(--gold);text-decoration:none;">${ag.pacientes?.nome||'—'}</a></td>
+                    <td>${ag.tipo==='avulso'?'Avulso':'Pacote'}</td>
+                    <td>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-danger btn-sm" onclick="cancelarDash(${ag.id})">🚫 Cancelar</button>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('')}
+            </tbody>
+        </table>`;
+    }
+
+    // SESSÕES ACABANDO
+    const sesDiv = document.getElementById('sessoes-acabando');
+    if (!alertasPacotes||!alertasPacotes.length) {
+        sesDiv.innerHTML = '<div class="empty-state"><p>Todos os pacientes têm sessões suficientes. ✅</p></div>';
+    } else {
+        sesDiv.innerHTML = `<table>
+            <thead><tr>
+                <th>Paciente</th><th>Pacote</th><th>Restantes</th><th>Ação</th>
+            </tr></thead>
+            <tbody>
+            ${alertasPacotes.map(a => `<tr>
+                <td><strong>${a.pacientes?.nome||'—'}</strong></td>
+                <td>${a.total_sessoes} sessões</td>
+                <td><span class="sessoes-badge ${a.sessoes_restantes===0?'critico':'alerta'}">
+                    ${a.sessoes_restantes} restante${a.sessoes_restantes!==1?'s':''}
+                </span></td>
+                <td><a href="pacientes.html" class="btn btn-outline btn-sm">Renovar Pacote</a></td>
             </tr>`).join('')}
             </tbody>
         </table>`;
     }
+}
+
+async function darBaixaDash(id) {
+    if (!confirm('Confirmar realização desta sessão?')) return;
+    const { data: ag } = await db.from('agendamentos').select('*').eq('id',id).single();
+    if (!ag) return;
+
+    await db.from('agendamentos').update({ status:'realizado' }).eq('id',id);
+
+    if (ag.tipo==='pacote' && ag.pacote_paciente_id) {
+        const { data: pk } = await db.from('pacientes_pacotes').select('*').eq('id',ag.pacote_paciente_id).single();
+        if (pk) {
+            const novoReal = (pk.sessoes_realizadas||0) + 1;
+            const novoRest = Math.max(0,(pk.sessoes_restantes||0) - 1);
+            await db.from('pacientes_pacotes').update({
+                sessoes_realizadas: novoReal,
+                sessoes_restantes: novoRest,
+                status: novoRest===0 ? 'concluido' : 'ativo'
+            }).eq('id', ag.pacote_paciente_id);
+        }
+    }
+
+    if (ag.tipo==='avulso' && ag.valor_cobrado) {
+        const { data: pac } = await db.from('pacientes').select('nome').eq('id',ag.paciente_id).single();
+        await db.from('financeiro').insert([{
+            paciente_id: ag.paciente_id,
+            agendamento_id: id,
+            tipo: 'ENTRADA',
+            descricao: `Sessão avulsa — ${pac?.nome||'Paciente'}`,
+            valor: ag.valor_cobrado,
+            forma_pagamento: ag.forma_pagamento,
+            data_movimento: ag.data_sessao
+        }]);
+    }
+
+    alert('✅ Sessão realizada!');
+    carregarDashboard();
+}
+
+async function cancelarDash(id) {
+    if (!confirm('Cancelar este agendamento?')) return;
+    await db.from('agendamentos').update({ status:'cancelado' }).eq('id',id);
+    alert('Agendamento cancelado.');
+    carregarDashboard();
 }
 
 carregarDashboard();

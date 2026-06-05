@@ -13,13 +13,34 @@
 <div class="main">
     <div class="header">
         <h1>◉ <span class="header-gold">Sessões</span></h1>
-        <p>Controle de sessões por paciente</p>
+        <p>Controle completo de sessões por paciente</p>
     </div>
 
     <div class="container">
 
+        <!-- RESUMO GERAL -->
+        <div class="cards-grid">
+            <div class="card-stat">
+                <div class="card-stat-label">Total Realizadas</div>
+                <div class="card-stat-value green" id="total-realizadas">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Agendadas</div>
+                <div class="card-stat-value gold" id="total-agendadas">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Canceladas</div>
+                <div class="card-stat-value red" id="total-canceladas">—</div>
+            </div>
+            <div class="card-stat">
+                <div class="card-stat-label">Faltas</div>
+                <div class="card-stat-value red" id="total-faltas">—</div>
+            </div>
+        </div>
+
+        <!-- FILTRO POR PACIENTE -->
         <div class="form-section">
-            <h2>Consultar Paciente</h2>
+            <h2>Consultar por Paciente</h2>
             <div class="form-grid">
                 <div class="form-group">
                     <label>Selecione o Paciente</label>
@@ -32,13 +53,14 @@
 
         <!-- PAINEL INDIVIDUAL -->
         <div id="painel-paciente" style="display:none;">
-
             <div id="resumo-pacotes"></div>
-
             <div class="table-section">
                 <div class="table-header">
                     <h2>Histórico de Sessões</h2>
-                    <a id="link-prontuario" href="#" class="btn btn-outline btn-sm">📋 Ver Prontuário</a>
+                    <div style="display:flex;gap:8px;">
+                        <a id="link-agendar" href="agendamentos.html" class="btn btn-primary btn-sm">+ Agendar Sessão</a>
+                        <a id="link-prontuario" href="#" class="btn btn-outline btn-sm">📋 Prontuário</a>
+                    </div>
                 </div>
                 <div id="historico-sessoes"></div>
             </div>
@@ -48,7 +70,7 @@
         <div id="lista-geral">
             <div class="table-section">
                 <div class="table-header">
-                    <h2>Todos os Pacientes — Resumo</h2>
+                    <h2>Todos os Pacientes</h2>
                     <input id="pesquisa-geral" placeholder="Buscar paciente..." onkeyup="filtrarGeral()">
                 </div>
                 <div id="tabela-geral"></div>
@@ -65,6 +87,15 @@
 <script>
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let dadosGeral = [];
+
+async function carregarResumoGeral() {
+    const { data } = await db.from('agendamentos').select('status');
+    const todos = data||[];
+    document.getElementById('total-realizadas').textContent = todos.filter(s=>s.status==='realizado').length;
+    document.getElementById('total-agendadas').textContent  = todos.filter(s=>s.status==='agendado').length;
+    document.getElementById('total-canceladas').textContent = todos.filter(s=>s.status==='cancelado').length;
+    document.getElementById('total-faltas').textContent     = todos.filter(s=>s.status==='faltou').length;
+}
 
 async function carregarPacientesSelect() {
     const { data } = await db.from('pacientes').select('id,nome').eq('ativo',true).order('nome');
@@ -98,10 +129,14 @@ async function carregarSessoesPaciente() {
 
     const resumoDiv = document.getElementById('resumo-pacotes');
     if (!pacotes||!pacotes.length) {
-        resumoDiv.innerHTML = '<div class="card"><p style="color:var(--text-muted);font-style:italic;">Nenhum pacote contratado.</p></div>';
+        resumoDiv.innerHTML = `
+        <div class="card" style="margin-bottom:16px;">
+            <p style="color:var(--text-muted);font-style:italic;">Nenhum pacote contratado.</p>
+            <a href="pacientes.html" class="btn btn-primary btn-sm" style="margin-top:12px;">+ Adicionar Pacote</a>
+        </div>`;
     } else {
         resumoDiv.innerHTML = pacotes.map(pk => {
-            const perc = pk.total_sessoes>0 ? (pk.sessoes_realizadas/pk.total_sessoes*100) : 0;
+            const perc = pk.total_sessoes>0?(pk.sessoes_realizadas/pk.total_sessoes*100):0;
             const cor  = pk.sessoes_restantes<=1?'red':pk.sessoes_restantes<=2?'yellow':'';
             return `
             <div class="card" style="margin-bottom:16px;">
@@ -112,34 +147,47 @@ async function carregarSessoesPaciente() {
                         </strong>
                         <span class="status status-${pk.status}" style="margin-left:10px;">${pk.status}</span>
                     </div>
-                    <div style="font-size:13px;color:var(--text-muted);">
+                    <div style="text-align:right;font-size:13px;color:var(--text-muted);">
                         Início: ${pk.data_inicio?pk.data_inicio.split('-').reverse().join('/'):'—'}
                         · R$ ${Number(pk.valor_total).toFixed(2)}
                     </div>
                 </div>
+
                 <div style="display:flex;gap:32px;margin-top:16px;flex-wrap:wrap;">
                     <div style="text-align:center;">
-                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:var(--gold-dark);">${pk.total_sessoes}</div>
+                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:var(--gold);">${pk.total_sessoes}</div>
                         <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Total</div>
                     </div>
                     <div style="text-align:center;">
-                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:#2d7a4f;">${pk.sessoes_realizadas}</div>
+                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:#4daa70;">${pk.sessoes_realizadas}</div>
                         <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Realizadas</div>
                     </div>
                     <div style="text-align:center;">
-                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:${pk.sessoes_restantes<=2?'#b84040':'var(--dark)'};">${pk.sessoes_restantes}</div>
+                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:${pk.sessoes_restantes<=2?'#e07070':'var(--text)'};">${pk.sessoes_restantes}</div>
                         <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Restantes</div>
                     </div>
+                    <div style="text-align:center;">
+                        <div style="font-family:'Cormorant Garamond',serif;font-size:34px;color:#e07070;">${pk.sessoes_realizadas > 0 ? Math.round((pk.sessoes_realizadas/pk.total_sessoes)*100) : 0}%</div>
+                        <div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);">Progresso</div>
+                    </div>
                 </div>
+
                 <div class="progress-bar" style="margin-top:12px;">
                     <div class="progress-fill ${cor}" style="width:${perc}%"></div>
                 </div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${perc.toFixed(0)}% concluído</div>
+
+                ${pk.sessoes_restantes<=2 && pk.status==='ativo' ? `
+                <div style="margin-top:12px;padding:10px 14px;background:rgba(224,112,112,0.1);border-radius:8px;border:1px solid rgba(224,112,112,0.3);">
+                    <strong style="color:#e07070;font-size:13px;">
+                        ⚠️ ${pk.sessoes_restantes===0?'Pacote esgotado!':'Poucas sessões restantes!'}
+                    </strong>
+                    <a href="pacientes.html" class="btn btn-outline btn-sm" style="margin-left:12px;">Renovar Pacote</a>
+                </div>` : ''}
             </div>`;
         }).join('');
     }
 
-    // Histórico
+    // Histórico de sessões
     const { data: sessoes } = await db.from('agendamentos')
         .select('*')
         .eq('paciente_id', pacienteId)
@@ -147,23 +195,106 @@ async function carregarSessoesPaciente() {
 
     const histDiv = document.getElementById('historico-sessoes');
     if (!sessoes||!sessoes.length) {
-        histDiv.innerHTML = '<div class="empty-state"><p>Nenhuma sessão registrada.</p></div>';
+        histDiv.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-icon">◉</div>
+            <p>Nenhuma sessão registrada.</p>
+        </div>`;
         return;
     }
+
     histDiv.innerHTML = `<table>
         <thead><tr>
-            <th>Data</th><th>Horário</th><th>Tipo</th><th>Status</th><th>Observação</th>
+            <th>Data</th><th>Horário</th><th>Tipo</th><th>Duração</th><th>Status</th><th>Observação</th><th>Ações</th>
         </tr></thead>
         <tbody>
         ${sessoes.map(s => `<tr>
             <td>${s.data_sessao?s.data_sessao.split('-').reverse().join('/'):'—'}</td>
             <td>${s.horario?s.horario.slice(0,5):'—'}</td>
             <td>${s.tipo==='avulso'?'Avulso':'Pacote'}${s.valor_cobrado?' · R$ '+Number(s.valor_cobrado).toFixed(2):''}</td>
+            <td>${s.duracao_minutos||50} min</td>
             <td><span class="status status-${s.status}">${s.status}</span></td>
-            <td style="color:var(--text-muted);font-size:12px;">${s.observacoes||'—'}</td>
+            <td style="color:var(--text-muted);font-size:12px;max-width:150px;">${s.observacoes||'—'}</td>
+            <td>
+                <div style="display:flex;gap:6px;">
+                    ${s.status==='agendado'?`
+                        <button class="btn btn-green btn-sm" onclick="darBaixa(${s.id})">✅</button>
+                        <button class="btn btn-outline btn-sm" onclick="marcarFalta(${s.id})">❌</button>
+                    `:''}
+                    <button class="btn btn-danger btn-sm" onclick="excluirSessao(${s.id}, '${s.tipo}', ${s.pacote_paciente_id||'null'}, '${s.status}')">🗑️</button>
+                </div>
+            </td>
         </tr>`).join('')}
         </tbody>
     </table>`;
+}
+
+async function darBaixa(id) {
+    if (!confirm('Confirmar realização desta sessão?')) return;
+    const { data: ag } = await db.from('agendamentos').select('*').eq('id',id).single();
+    if (!ag) return;
+
+    await db.from('agendamentos').update({ status:'realizado' }).eq('id',id);
+
+    if (ag.tipo==='pacote' && ag.pacote_paciente_id) {
+        const { data: pk } = await db.from('pacientes_pacotes')
+            .select('*').eq('id',ag.pacote_paciente_id).single();
+        if (pk) {
+            const novoReal = (pk.sessoes_realizadas||0) + 1;
+            const novoRest = Math.max(0,(pk.sessoes_restantes||0) - 1);
+            await db.from('pacientes_pacotes').update({
+                sessoes_realizadas: novoReal,
+                sessoes_restantes: novoRest,
+                status: novoRest===0 ? 'concluido' : 'ativo'
+            }).eq('id', ag.pacote_paciente_id);
+        }
+    }
+
+    if (ag.tipo==='avulso' && ag.valor_cobrado) {
+        const { data: pac } = await db.from('pacientes').select('nome').eq('id',ag.paciente_id).single();
+        await db.from('financeiro').insert([{
+            paciente_id: ag.paciente_id,
+            agendamento_id: id,
+            tipo: 'ENTRADA',
+            descricao: `Sessão avulsa — ${pac?.nome||'Paciente'}`,
+            valor: ag.valor_cobrado,
+            forma_pagamento: ag.forma_pagamento,
+            data_movimento: ag.data_sessao
+        }]);
+    }
+
+    alert('✅ Sessão realizada!');
+    carregarSessoesPaciente();
+    carregarResumoGeral();
+}
+
+async function marcarFalta(id) {
+    if (!confirm('Marcar falta para este paciente?')) return;
+    await db.from('agendamentos').update({ status:'faltou' }).eq('id',id);
+    carregarSessoesPaciente();
+    carregarResumoGeral();
+}
+
+async function excluirSessao(id, tipo, pacoteId, status) {
+    if (!confirm('Excluir esta sessão? Se já foi realizada, as sessões do pacote NÃO serão devolvidas automaticamente.')) return;
+
+    // Se estava realizada e era de pacote, devolve sessão
+    if (status==='realizado' && tipo==='pacote' && pacoteId) {
+        const { data: pk } = await db.from('pacientes_pacotes')
+            .select('*').eq('id', pacoteId).single();
+        if (pk) {
+            await db.from('pacientes_pacotes').update({
+                sessoes_realizadas: Math.max(0,(pk.sessoes_realizadas||0)-1),
+                sessoes_restantes: (pk.sessoes_restantes||0)+1,
+                status: 'ativo'
+            }).eq('id', pacoteId);
+        }
+    }
+
+    await db.from('agendamentos').delete().eq('id',id);
+    alert('Sessão excluída!');
+    carregarSessoesPaciente();
+    carregarResumoGeral();
 }
 
 async function carregarGeral() {
@@ -186,18 +317,23 @@ function renderizarGeral(lista) {
         </tr></thead>
         <tbody>
         ${lista.map(p => {
-            const ativo = (p.pacientes_pacotes||[]).find(pk => pk.status==='ativo');
+            const ativo = (p.pacientes_pacotes||[]).find(pk=>pk.status==='ativo');
             if (!ativo) return `<tr>
                 <td><strong>${p.nome}</strong></td>
                 <td colspan="4"><span class="sessoes-badge alerta">Sem pacote ativo</span></td>
-                <td><a href="prontuario.html?id=${p.id}" class="btn btn-outline btn-sm">📋 Prontuário</a></td>
+                <td>
+                    <div style="display:flex;gap:6px;">
+                        <a href="prontuario.html?id=${p.id}" class="btn btn-outline btn-sm">📋</a>
+                        <a href="agendamentos.html" class="btn btn-primary btn-sm">+ Agendar</a>
+                    </div>
+                </td>
             </tr>`;
             const perc = ativo.total_sessoes>0?(ativo.sessoes_realizadas/ativo.total_sessoes*100):0;
             const cor  = ativo.sessoes_restantes<=1?'red':ativo.sessoes_restantes<=2?'yellow':'';
             return `<tr>
                 <td><strong>${p.nome}</strong></td>
                 <td>${ativo.pacotes_modelo?.nome||'Pacote'}</td>
-                <td style="color:#2d7a4f;font-weight:500;">${ativo.sessoes_realizadas}</td>
+                <td style="color:#4daa70;font-weight:500;">${ativo.sessoes_realizadas}</td>
                 <td>
                     <span class="sessoes-badge ${ativo.sessoes_restantes<=1?'critico':ativo.sessoes_restantes<=2?'alerta':'ok'}">
                         ${ativo.sessoes_restantes} restante${ativo.sessoes_restantes!==1?'s':''}
@@ -209,7 +345,12 @@ function renderizarGeral(lista) {
                     </div>
                     <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${perc.toFixed(0)}%</div>
                 </td>
-                <td><a href="prontuario.html?id=${p.id}" class="btn btn-outline btn-sm">📋 Prontuário</a></td>
+                <td>
+                    <div style="display:flex;gap:6px;">
+                        <a href="prontuario.html?id=${p.id}" class="btn btn-outline btn-sm">📋</a>
+                        <a href="agendamentos.html" class="btn btn-primary btn-sm">+ Agendar</a>
+                    </div>
+                </td>
             </tr>`;
         }).join('')}
         </tbody>
@@ -218,10 +359,11 @@ function renderizarGeral(lista) {
 
 function filtrarGeral() {
     const t = document.getElementById('pesquisa-geral').value.toLowerCase();
-    renderizarGeral(dadosGeral.filter(p => p.nome.toLowerCase().includes(t)));
+    renderizarGeral(dadosGeral.filter(p=>p.nome.toLowerCase().includes(t)));
 }
 
 carregarPacientesSelect();
+carregarResumoGeral();
 carregarGeral();
 </script>
 </body>
